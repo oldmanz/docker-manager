@@ -49,7 +49,8 @@ menu () {
         "1)" "Container Management" \
         "2)" "Software" \
         "3)" "View Logs" \
-        "4)" "Run Setup" 3>&2 2>&1 1>&3
+        "4)" "View SSH Key" \
+        "5)" "Run Command Setup" 3>&2 2>&1 1>&3
     )
 
     case $CHOICE in
@@ -63,6 +64,15 @@ menu () {
             logs
         ;;
         "4)")
+            clear
+            echo "Copy the below key to you git profile.  (github.com)"
+            echo "..."
+            docker exec -it 2nform cat /dump/ssh.txt
+            echo "..."
+            read  -n 1 -p "Press any key to continue"
+            menu
+        ;;
+        "5)")
             setup
         ;;
     esac
@@ -632,6 +642,7 @@ git () {
 
     if yesno "Do you want to clone with SSH? (recommended)"
     then
+        message "You will need to add your ssh key to github.  See the main menu after setup is complete."
         export GIT_PASSWORD=""
     else
         export GIT_PASSWORD=$(whiptail --inputbox "Enter your git password or personal access token." 8 39  --title "2nform - Docker Run Setup" 3>&1 1>&2 2>&3)
