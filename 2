@@ -16,7 +16,7 @@ init () {
         then
             shell
         else
-          dispatcher $1
+          dispatcher $1 $2 $3 $4
         fi
     else
         if yesno "2nform container not created. Would you like to create it now?"
@@ -272,7 +272,7 @@ dispatcher () {
         "remove")
             down
         ;;
-        "update")
+        "update"|"upgrade")
             update
         ;;
         "reset")
@@ -281,20 +281,31 @@ dispatcher () {
         "restore")
             restore
         ;;
-        "logs")
-            dockerlog
+        "logs"|"log"|"l")
+            if [[ -v 2 ]]; then
+                log $2
+            else
+                dockerlog
+            fi
         ;;
         "gui"|"menu"|"g")
-            menu
-        ;;
-        "manager")
-            manager
-        ;;
-        "software")
-            software
-        ;;
-        "setup")
-            setup
+            case $2 in
+            "manager")
+                manager
+            ;;
+            "software")
+                software
+            ;;
+            "logs"|"log")
+                logs
+            ;;
+            "setup")
+                setup
+            ;;
+            *)
+                menu
+            ;;
+        esac
         ;;
         "subl"|"text"|"sublime")
             startsoftware text
@@ -308,10 +319,26 @@ dispatcher () {
         "pycharm")
             startsoftware pycharm
         ;;
+        "help")
+            help
+        ;;
+        "api"|"ram"|"2nform"|"report")
+            injectcommand "cd /var/www/html/$1"
+        ;;    
+        "agol-scripts"|"db-functions")
+            injectcommand "cd /var/www/python/$1"
+        ;;    
     esac
 
 }
 
+injectcommand () {
+    if exists; then
+        if isrunning; then
+            docker exec -it 2nform zsh -c "$1 && zsh"
+        fi
+    fi
+}
 
 shell () {
     if startifstopped
@@ -343,6 +370,29 @@ shell () {
     fi
 }
 
+2start () {
+    if exists
+    then
+        if ! isrunning
+        then
+            echo "Starting Container..."
+            if docker start 2nform
+            then
+                return 0
+            else
+                return 1
+            fi
+        else
+            echo "Container Already Running"
+            return 1
+        fi
+    else
+        echo "Container doesn't exist"
+        return 1
+    fi
+
+}
+
 2stop () {
     if exists
     then
@@ -356,9 +406,11 @@ shell () {
                 return 1
             fi
         else
+            echo "Container Not Running"
             return 1
         fi
     else
+        echo "Container doesn't exist"
         return 1
     fi
 
@@ -657,4 +709,49 @@ git () {
 }
 
 
-init $1
+help()
+{
+   echo "2nform - Docker for Local Dev - Manager"
+   echo 
+   echo "Run '2' alone for docker shell. (starts setup if container down)"
+   echo "Run '2 gui' for gui manager."
+   echo
+   echo "Direct Command Reference"
+   echo
+   echo "Syntax: 2 command sub-command"
+   echo "ex: '2 restart' or '2 api test'"
+   echo
+   echo "Commands:"
+   echo
+   echo "gui|menu|g                         Open Main Menu"
+   echo "  -  manager                       Open Container Manager"
+   echo "  -  software                      Open Software Gui"
+   echo "  -  logs                          Open Logs Gui"
+   echo "  -  setup                         Start Run Command Setup"
+   echo 
+   echo "start                              Start 2nform Container"
+   echo "restart                            Restart 2nform Container"
+   echo "stop                               Stop 2nform Container"
+   echo "remove                             Remove 2nform Container (Data Persists)"
+   echo
+   echo "restore                            Start Database Restore"
+   echo
+   echo "update|upgrade                     Update Container  (Data Persists)"
+   echo "reset                              Reset Container  (Data in volumes lost)"
+   echo
+   echo "text|subl|sublime                  Start Sublime Text"
+   echo "merge                              Start Sublime Merge"
+   echo "gitkraken                          Start Git Kraken"
+   echo "pycharm                            Start Pycharm"
+   echo  
+   echo "logs|log|l                         Open Container Logs"
+   echo "  -  git                           Open Git Cloner Logs"
+   echo "  -  restore                       Open DB Restore Logs"
+   echo "  -  REPO (api|ram|...)            Open Project Setup Logs"
+   echo
+   echo "REPO (api|ram|...)                 Open Project Folder in Shell"
+   echo
+
+}
+
+init $1 $2 $3 $4
