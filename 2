@@ -1,0 +1,643 @@
+#!/bin/bash
+
+
+init () {
+    getenv
+    status
+
+    if ! command -v docker &> /dev/null
+    then
+        error "Docker doesn't appear to be installed. Install using your OS' instructions and re-run the script"
+    fi 
+
+    if exists
+    then
+        if [[ ! -v 1 ]]
+        then
+            shell
+        else
+          dispatcher $1
+        fi
+    else
+        if yesno "2nform container not created. Would you like to create it now?"
+        then
+            if runcommand
+            then
+                if yesno "Found run command.  Use it?"
+                then
+                    run
+                    menu
+                else
+                    setup
+                    menu
+                fi
+            else
+                setup
+                menu
+            fi
+        else
+            exit 0
+        fi
+    fi
+}
+
+menu () {
+    status
+
+    CHOICE=$(
+    whiptail --title "2nform - Docker for Local Dev" --menu "2nform Status : $STATUS" 25 78 16 \
+        "1)" "Container Management" \
+        "2)" "Software" \
+        "3)" "View Logs" \
+        "4)" "Run Setup" 3>&2 2>&1 1>&3
+    )
+
+    case $CHOICE in
+        "1)")
+            manager
+        ;;
+        "2)")
+            software
+        ;;
+        "3)")
+            logs
+        ;;
+        "4)")
+            setup
+        ;;
+    esac
+}
+
+software () {
+    status
+
+    CHOICE=$(
+    whiptail --title "2nform - Docker for Local Dev" --menu "2nform Status : $STATUS" 25 78 16 \
+        "0)" "Back to Main Menu" \
+        "1)" "Sublime Text" \
+        "2)" "Sublime Merge" \
+        "3)" "Git Kraken" \
+        "4)" "Pycharm" 3>&2 2>&1 1>&3
+    )
+
+    case $CHOICE in
+        "0)")
+            menu
+        ;;
+        "1)")
+            startsoftware text
+        ;;
+        "2)")
+            startsoftware merge
+        ;;
+        "3)")
+            startsoftware gitkraken
+        ;;
+        "4)")
+            startsoftware pycharm
+        ;;
+    esac
+}
+
+logs () {
+    status
+
+    CHOICE=$(
+    whiptail --title "2nform - Logs" --menu "2nform Status : $STATUS" 25 78 16 \
+        "0)" "Back to Main Menu" \
+        "1)" "Container" \
+        "2)" "DB Restore" \
+        "3)" "Git Setup" \
+        "4)" "API" \
+        "5)" "RAM" \
+        "6)" "2NFORM" \
+        "7)" "Report" \
+        "8)" "DB-Functions" \
+        "9)" "Agol-Scripts" 3>&2 2>&1 1>&3
+    )
+
+    case $CHOICE in
+        "0)")
+            menu
+        ;;
+        "1)")
+            dockerlog
+            logs
+        ;;
+        "2)")
+            log restore
+            logs
+        ;;
+        "3)")
+            log git
+            logs
+        ;;
+        "4)")
+            log api
+            logs
+        ;;
+        "5)")
+            log ram
+            logs
+        ;;
+        "6)")
+            log 2nform
+            logs
+        ;;
+        "7)")
+            log report
+            logs
+        ;;
+        "8)")
+            log db-functions
+            logs
+        ;;
+        "9)")
+            log agol-scripts
+            logs
+        ;;
+    esac
+}
+
+
+dockerlog () {
+
+    docker logs 2nform -f
+}
+
+log () {
+    docker exec -it 2nform tail -f /var/log/2nform/$1.log
+}
+
+manager () {
+    status
+
+    CHOICE=$(
+    whiptail --title "2nform - Docker for Local Dev" --menu "2nform Status :  $STATUS" 25 78 16 \
+        "0)" "Back to Main Menu" \
+        "1)" "Drop into container shell" \
+        "2)" "Start or Restart the container" \
+        "3)" "Stop the container" \
+        "4)" "Restore Database with dump file" \
+        "5)" "Update to Latest Container (Data persits: May have side effects)" \
+        "6)" "Delete and Re-create (Complete reset: All data lost)" 3>&2 2>&1 1>&3
+    ) 
+        
+    case $CHOICE in
+        "0)")
+            menu
+        ;;
+        "1)")
+            clear
+            if shell
+            then
+                message "Shell Closed"
+            else
+                message "Error Opening Shell"
+            fi
+            manager
+        ;;
+        "2)")
+            clear
+            if 2restart
+            then
+                message "Container (Re)Started!"
+            else
+                message "Container (Re)Start Failed (It may not exist.)"
+            fi
+            manager
+        ;;
+        "3)")
+            clear
+            if 2stop
+            then
+                message "Container Stopped!"
+            else
+                message "Container Stop Failed (It may not be running)"
+            fi
+            manager
+        ;;
+        "4)")
+            clear
+            if restore
+            then
+                message "Database Restored!"
+            else
+                message "Database Not Restored"
+            fi
+            manager
+        ;;
+        "5)")
+            clear
+            if update
+            then
+                message "Container Updated!"
+            else
+                message "Container Update Failed"
+            fi
+            manager
+        ;;
+        "6)")
+            clear
+            if reset
+            then
+                message "Container Reset!"
+            else
+                message "Container Reset Failed"
+            fi
+            manager
+        ;;
+    esac
+}
+
+dispatcher () {
+
+    case $1 in
+        "start"|"restart")
+            2restart
+        ;;
+        "stop")
+            2stop
+        ;;
+        "remove")
+            down
+        ;;
+        "update")
+            update
+        ;;
+        "reset")
+            reset
+        ;;
+        "restore")
+            restore
+        ;;
+        "gui"|"menu"|"g")
+            menu
+        ;;
+        "manager")
+            manager
+        ;;
+        "software")
+            software
+        ;;
+        "setup")
+            setup
+        ;;
+        "subl"|"text"|"sublime")
+            startsoftware text
+        ;;
+        "merge")
+            startsoftware merge
+        ;;
+        "gitkraken")
+            startsoftware gitkraken
+        ;;
+        "pycharm")
+            startsoftware pycharm
+        ;;
+    esac
+
+}
+
+
+shell () {
+    if startifstopped
+    then
+        if docker exec -it 2nform zsh
+        then
+            return 0
+        else
+            return 1
+        fi
+    fi    
+}
+
+2restart () {
+    if exists
+    then
+        echo "(Re)Starting Container"
+        if docker restart 2nform
+        then
+            return 0
+        else
+            return 1
+        fi
+    else
+        echo "No Container"
+        return 1
+    fi
+}
+
+2stop () {
+    if exists
+    then
+        if isrunning
+        then
+            echo "Stopping Container..."
+            if docker stop 2nform
+            then
+                return 0
+            else
+                return 1
+            fi
+        else
+            return 1
+        fi
+    else
+        return 1
+    fi
+
+}
+
+2remove () {
+    if exists
+    then
+        docker rm 2nform
+        echo "Removed"
+    fi
+}
+
+restore () {
+    if startifstopped
+    then
+        if yesno "Do you have ONE .backup file in your dump folder?"
+        then
+            clear
+            echo "Starting DB Restore"
+            echo "This will take a while!"
+            if docker exec -it 2nform restore
+            then
+                return 0
+            else
+                return 1
+            fi
+        else
+            return 1
+        fi
+    fi
+}
+        
+
+update () {
+    if down
+    then
+        if run
+        then
+            return 0
+        else
+            return 1
+        fi
+    else
+        return 1
+    fi
+}    
+
+reset () {
+    if yesno "This will remove all persisted data. (postgres, 2n-projects, and user config) Are you sure you want to continue?"
+    then
+        down
+        docker volume rm 2nform
+        docker volume rm postgres-data
+        docker volume rm user-data
+        run
+    fi
+}
+
+down () {
+    if ! runcommand
+    then
+        if ! yesno "Your run command was not found.  If you continue, you will need to re-create it.  Would you like to continue?"
+        then
+            message "Process Aborted!"
+            return 1
+        fi
+
+    fi
+
+    2stop
+    2remove
+    return 0
+}
+
+run () {
+    if runcommand
+    then
+        if eval $DOCKER_RUN_COMMAND
+        then
+            return 0
+        else
+            return 1
+        fi
+    else
+        if setup
+        then
+            return 0
+        else
+            return 1
+        fi
+    fi
+}
+
+runcommand () {
+    if [[ -v DOCKER_RUN_COMMAND ]]
+    then
+        return 0
+    else
+        return 1
+    fi
+}
+
+startifstopped () {
+    if isrunning
+    then
+        return 0
+    else
+        if yesno "2nform is not running.  Would you like to start it?"
+        then
+            2restart
+            return 0
+        else
+            message "Process aborted!"
+            return 1
+        fi
+    fi
+}
+
+isrunning () {
+    if [ "$(docker ps | grep 2nform)" ]
+    then
+        return 0
+    else
+        return 1
+    fi
+}
+
+exists () {
+    if [ "$(docker ps -a | grep 2nform)" ]
+    then
+        return 0
+    else
+        return 1
+    fi
+}
+
+error () {
+    whiptail --title "2nform - Docker Local Dev" --msgbox "$1" --ok-button "exit" 8 78
+    exit 0
+}
+
+message () {
+    whiptail --title "2nform - Docker for Local Dev" --msgbox "$1" 8 78
+}
+
+yesno () {
+    if (whiptail --title "2nform - Docker Local Dev" --yesno "$1" 8 78); then
+    return 0
+else
+    return 1
+fi
+}
+
+
+getconf () {
+    export RUN_CONFIG_DIR="$HOME/.2nform.conf"
+}
+
+
+getenv () {
+    getconf
+    if [ -f $RUN_CONFIG_DIR ]; then
+    . $RUN_CONFIG_DIR
+    fi
+
+
+}
+
+status () {
+    STATUS="No Container"
+
+    if exists
+    then
+        STATUS="Stopped"
+    fi
+
+    if isrunning
+    then
+        STATUS="Running"
+    fi
+
+    return 0
+}
+
+
+startsoftware () {
+    if startifstopped
+    then
+        if docker exec 2nform $1
+        then
+            return 0
+        else
+            return 1
+        fi
+    fi
+}
+
+setup () {
+    if runcommand
+    then
+        if ! yesno "Would you like to overwrite your existing run command?"
+        then
+            message "Setup aborted!"
+            exit 0
+        fi
+    fi
+    
+    docker_start="docker run -d --restart unless-stopped"
+
+    ports
+
+    for port in $DOCKER_PORTS
+    do
+        p_string="$p_string -p $port"
+    done
+
+    volumes
+
+    git
+
+    if [[ ! -z "$GIT_PASSWORD" ]]
+    then
+        git_password="-e GIT_PASSWORD=$GIT_PASSWORD"
+    fi
+
+    docker="$docker_start $p_string -e GIT_USERNAME=$GIT_USERNAME -e GIT_EMAIL=$GIT_EMAIL $git_password -v $DOCKER_PROJECT_FOLDER:/var/www -v $DOCKER_DUMP_FOLDER:/dump -v $DOCKER_DATA_FOLDER:/var/lib/postgresql -v $DOCKER_USER_FOLDER:/root -h 2nform --name 2nform 2nform/docker-local-dev:latest"
+    
+    getconf
+    echo "$RUN_CONFIG_DIR"
+
+    echo "DOCKER_RUN_COMMAND='$docker'" > "$RUN_CONFIG_DIR"
+
+    if yesno "Docker Run command saved in $RUN_CONFIG_DIR.  Would you like to run it now?"
+    then
+        getenv
+        run
+        menu
+    else
+        exit 0
+    fi
+
+}
+
+ports () {
+    CHOICE=$(whiptail --title "2nform - Docker Run Setup" --ok-button "Continue" --checklist \
+    "Choose Ports to Forward. (HOST:CONTAINER)" 30 100 10 \
+    "80:80" "Main HTTP 2nform Port" ON \
+    "15432:5432" "Postgres for Dbeaver" ON \
+    "9003:9003" "PHP XDebug" ON \
+    "35729:35729" "Chrome Live Reload" ON \
+    "3000:3000" "Node API Ports" ON 3>&2 2>&1 1>&3
+    )
+    export DOCKER_PORTS=$CHOICE
+}
+
+volumes () {
+
+    if yesno "Will you be using VS Code remote container access? (setup volume for project dir)"
+    then
+        export DOCKER_PROJECT_FOLDER="2nform"
+    else
+        if yesno "Do you want your project folder in your home directory?"
+        then
+            export DOCKER_PROJECT_FOLDER="$HOME/2nform"
+        else
+            export DOCKER_PROJECT_FOLDER=$(whiptail --inputbox "What directory for project folder? (must be absolute path)" 8 39 "$HOME/2nform" --title "2nform - Docker Run Setup" 3>&1 1>&2 2>&3)
+
+        fi
+    fi
+
+    if yesno "Do you want to use you home directory for the database dump folder?"
+    then
+        export DOCKER_DUMP_FOLDER="$HOME/dump"
+    else
+        export DOCKER_DUMP_FOLDER=$(whiptail --inputbox "What directory for dump folder? (must be absolute path)" 8 39 "$HOME/dump" --title "2nform - Docker Run Setup" 3>&1 1>&2 2>&3)
+    fi
+
+    export DOCKER_DATA_FOLDER="positgres-data"
+    export DOCKER_USER_FOLDER="user-data"
+}
+
+git () {
+    export GIT_USERNAME=$(whiptail --inputbox "Enter your git username" 8 39  --title "2nform - Docker Run Setup" 3>&1 1>&2 2>&3)
+    export GIT_EMAIL=$(whiptail --inputbox "Enter your git email" 8 39  --title "2nform - Docker Run Setup" 3>&1 1>&2 2>&3)
+
+    if yesno "Do you want to clone with SSH? (recommended)"
+    then
+        export GIT_PASSWORD=""
+    else
+        export GIT_PASSWORD=$(whiptail --inputbox "Enter your git password or personal access token." 8 39  --title "2nform - Docker Run Setup" 3>&1 1>&2 2>&3)
+    fi
+
+}
+
+
+init $1
