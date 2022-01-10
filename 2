@@ -590,6 +590,7 @@ setup () {
     if yesno "Docker Run command saved in $RUN_CONFIG_DIR.  Would you like to run it now?"
     then
         getenv
+        down
         run
         menu
     else
