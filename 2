@@ -313,6 +313,7 @@ dispatcher () {
 shell () {
     if startifstopped
     then
+        clear
         if docker exec -it 2nform zsh
         then
             return 0
