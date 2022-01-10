@@ -316,6 +316,7 @@ shell () {
         clear
         if docker exec -it 2nform zsh
         then
+            clear
             return 0
         else
             return 1
