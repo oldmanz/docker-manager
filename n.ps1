@@ -189,7 +189,7 @@ function gits {
     $gits = $gits + "-e GIT_EMAIL=$email"
 
     if (yesno("Do you want to clone with SSH? (recommended)")) {
-        Write-Host "You will need to add your ssh key to github.  See the main menu after setup is complete."
+        Write-Host "You will need to add your ssh key to github.  Run 'n ssh' after setup is complete."
         Start-Sleep -s 3
     }
     else {
