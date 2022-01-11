@@ -713,13 +713,13 @@ help()
 {
    echo "2nform - Docker for Local Dev - Manager"
    echo 
-   echo "Run '2' alone for docker shell. (starts setup if container down)"
-   echo "Run '2 gui' for gui manager."
+   echo "Run 'n' alone for docker shell. (starts setup if container down)"
+   echo "Run 'n gui' for gui manager."
    echo
    echo "Direct Command Reference"
    echo
-   echo "Syntax: 2 command sub-command"
-   echo "ex: '2 restart' or '2 api test'"
+   echo "Syntax: n command sub-command"
+   echo "ex: 'n restart' or 'n logs api'"
    echo
    echo "Commands:"
    echo
