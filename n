@@ -279,6 +279,9 @@ dispatcher () {
         "ssh")
             2ssh
         ;;
+        "status")
+            printStatus
+        ;;
         "logs"|"log"|"l")
             if [[ -v 2 ]]; then
                 log $2
@@ -603,6 +606,14 @@ status () {
     return 0
 }
 
+printStatus () {
+    status
+    runcommand
+
+    echo "-------------"
+    echo "Status :  $STATUS"
+    echo "Run Command :  $DOCKER_RUN_COMMAND"
+}
 
 startsoftware () {
     if startifstopped
@@ -697,7 +708,7 @@ volumes () {
         export DOCKER_DUMP_FOLDER=$(whiptail --inputbox "What directory for dump folder? (must be absolute path)" 8 39 "$HOME/dump" --title "2nform - Docker Run Setup" 3>&1 1>&2 2>&3)
     fi
 
-    export DOCKER_DATA_FOLDER="positgres-data"
+    export DOCKER_DATA_FOLDER="postgres-data"
     export DOCKER_USER_FOLDER="user-data"
 }
 
@@ -735,7 +746,9 @@ help()
    echo "  -  software                      Open Software Gui"
    echo "  -  logs                          Open Logs Gui"
    echo "  -  setup                         Start Run Command Setup"
-   echo 
+   echo
+   echo "status                             Print Container Info"
+   echo
    echo "start                              Start 2nform Container"
    echo "restart                            Restart 2nform Container"
    echo "stop                               Stop 2nform Container"
