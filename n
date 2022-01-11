@@ -64,12 +64,7 @@ menu () {
             logs
         ;;
         "4)")
-            clear
-            echo "Copy the below key to you git profile.  (github.com)"
-            echo "..."
-            docker exec -it 2nform cat /dump/ssh.txt
-            echo "..."
-            read  -n 1 -p "Press any key to continue"
+            2ssh
             menu
         ;;
         "5)")
@@ -281,6 +276,9 @@ dispatcher () {
         "restore")
             restore
         ;;
+        "ssh")
+            2ssh
+        ;;
         "logs"|"log"|"l")
             if [[ -v 2 ]]; then
                 log $2
@@ -330,6 +328,15 @@ dispatcher () {
         ;;    
     esac
 
+}
+
+2ssh () {
+    clear
+    echo "Copy the below key to you git profile.  (github.com)"
+    echo "..."
+    docker exec -it 2nform cat /dump/ssh.txt
+    echo "..."
+    read  -n 1 -p "Press any key to continue"
 }
 
 injectcommand () {
@@ -738,6 +745,8 @@ help()
    echo
    echo "update|upgrade                     Update Container  (Data Persists)"
    echo "reset                              Reset Container  (Data in volumes lost)"
+   echo
+   echo "ssh                                Print your ssh key"
    echo
    echo "text|subl|sublime                  Start Sublime Text"
    echo "merge                              Start Sublime Merge"

@@ -25,6 +25,7 @@ function dispatcher($arg0, $arg1) {
         {($_ -eq "update") -or ($_ -eq "upgrade")} {update}
         "restore" {restore}
         "setup" {startSetup}
+        "ssh" {2ssh}
         {($_ -eq "subl") -or ($_ -eq "text") -or ($_ -eq "sublime")} {startSoftware "subl"}
         "merge" {startSoftware "merge"}
         "gitkraken" {startSoftware "gitkraken"}
@@ -47,6 +48,15 @@ function shell{
         menu
     }
 
+}
+
+function 2ssh{
+    Clear-Host
+    Write-Host "Copy the below key to you git profile.  (github.com)"
+    Write-Host "..."
+    docker exec -it 2nform cat /dump/ssh.txt
+    Write-Host "..."
+    Read-Host "Press any key to continue"
 }
 
 function startSoftware($name) {
@@ -428,6 +438,8 @@ function help {
    Write-Host
    Write-Host "update|upgrade                     Update Container  (Data Persists)"
    Write-Host "reset                              Reset Container  (Data in volumes lost)"
+   Write-Host
+   Write-Host "ssh                                Show your ssh key"
    Write-Host
    Write-Host "text|subl|sublime                  Start Sublime Text"
    Write-Host "merge                              Start Sublime Merge"
