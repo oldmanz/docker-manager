@@ -2,7 +2,7 @@
 ########### DO NOT MOVE currentVersion ON LINE 5 #####
 checkUpdate () {
     echo "Checking for Updates..."
-    currentVersion=2
+    currentVersion=1
     latestVersion=$(curl https://raw.githubusercontent.com/oldmanz/docker-manager/main/n 2> /dev/null | sed '5!d')
     IFS='=' read -ra lvArray <<< "$latestVersion"
     lv=${lvArray[-1]}
@@ -18,7 +18,7 @@ checkUpdate () {
 }
 
 updateScript () {
-    if [ id -u ]; then
+    if id -u ; then
         echo "Updating...."
         ndir=$(eval which n)
         wget https://raw.githubusercontent.com/oldmanz/docker-manager/main/n -O ${ndir} && sudo chmod +x ${ndir} 
@@ -51,8 +51,8 @@ init () {
     startCheck
     getenv
     status
-    echo "Hi Hannah"
-    sleep 3
+    #echo "Hi Hannah"
+    #sleep 3
 
     if ! command -v docker &> /dev/null
     then
