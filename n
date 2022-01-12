@@ -109,7 +109,7 @@ updateContainer () {
     echo "Starting Container Update to $1"
     IFS=':' read -ra ctA <<< "$DOCKER_RUN_COMMAND"
     ctag=${ctA[${#ctA[@]}-1]}
-    sed -i "s/docker-local-dev:$ctag/docker-local-dev:$1/" $RUN_CONFIG_DIR
+    sed -i.bak "s/docker-local-dev:$ctag/docker-local-dev:$1/" $RUN_CONFIG_DIR
     getenv 
     if [ ! -z "$2" ]; then
         resetPostgres
@@ -129,7 +129,7 @@ startCheck () {
     else
         if [ $day -ne $UPDATE_DATE ]; then
             checkUpdate
-            sed -i "2s/.*/UPDATE_DATE=$day/" $RUN_CONFIG_DIR
+            sed -i.bak "2s/.*/UPDATE_DATE=$day/" $RUN_CONFIG_DIR
         fi 
     fi
     getenv
