@@ -2,7 +2,7 @@
 ########### DO NOT MOVE currentVersion ON LINE 5 #####
 checkUpdate () {
     echo "Checking for Manager Updates..."
-    currentVersion=2
+    currentVersion=3
     latestVersion=$(curl https://raw.githubusercontent.com/oldmanz/docker-manager/main/n 2> /dev/null | sed '5!d')
     IFS='=' read -ra lvArray <<< "$latestVersion"
     lv=${lvArray[${#lvArray[@]}-1]}
@@ -157,7 +157,7 @@ init () {
         then
             shell
         else
-          dispatcher $1 $2 $3 $4
+          dispatcher $@
         fi
     else
         if yesno "2nform container not created. Would you like to create it now?"
@@ -464,11 +464,9 @@ dispatcher () {
         "help")
             help
         ;;
-        "api"|"ram"|"2nform"|"report")
-            injectcommand "cd /var/www/html/$1"
-        ;;    
-        "agol-scripts"|"db-functions")
-            injectcommand "cd /var/www/python/$1"
+        *)
+            injectcommand $@
+
         ;;    
     esac
 
@@ -486,7 +484,7 @@ dispatcher () {
 injectcommand () {
     if exists; then
         if isrunning; then
-            docker exec -it 2nform zsh -c "$1 && zsh"
+            docker exec -it 2nform zsh -c "source $1 && $2 && zsh"
         fi
     fi
 }
@@ -939,6 +937,9 @@ help()
    echo "  -  REPO (api|ram|...)            Open Project Setup Logs"
    echo
    echo "REPO (api|ram|...)                 Open Project Folder in Shell"
+   echo "  -  t|test                        Test Repo"
+   echo "  -  r|run                         Run Repo"
+   echo "  -  i|install                     Install Repo"
    echo
 
 }
