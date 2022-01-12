@@ -12,12 +12,12 @@ checkUpdate () {
     fi
     if [ "$1" == "m" ]; then
         echo "Manager Force Update"
-        updateScript
+        updateScript $lv
         exit 0
     fi
     if [ "$lv" -gt "$currentVersion" ]; then
         echo "Manager Update Availablve ($currentVersion > $lv)"
-        updateScript
+        updateScript $lv
     else
         echo "No Manager Updates!"
     fi
@@ -102,7 +102,7 @@ findLatestTag () {
 
 updateScript () {
     echo "Update will run as root:"
-    echo "Updating...."
+    echo "Updating to $1...."
     ndir=$(eval which n)
     sudo wget https://raw.githubusercontent.com/oldmanz/docker-manager/main/n -O ${ndir} && sudo chmod +x ${ndir} 
     sleep 3
