@@ -2,13 +2,18 @@
 ########### DO NOT MOVE currentVersion ON LINE 5 #####
 checkUpdate () {
     echo "Checking for Manager Updates..."
-    currentVersion=1
+    currentVersion=2
     latestVersion=$(curl https://raw.githubusercontent.com/oldmanz/docker-manager/main/n 2> /dev/null | sed '5!d')
     IFS='=' read -ra lvArray <<< "$latestVersion"
     lv=${lvArray[-1]}
     re='^[0-9]+$'
     if ! [[ $lv =~ $re ]] ; then
         echo "Updater Error" >&2
+    fi
+    if [ "$1" == "m" ]; then
+        echo "Manager Force Update"
+        updateScript
+        exit 0
     fi
     if [ "$lv" -gt "$currentVersion" ]; then
         echo "Manager Update Availablve ($currentVersion > $lv)"
@@ -50,6 +55,11 @@ checkUpdate () {
             lvm=${lvA[-1]}
             cvM=${cvA[0]}
             cvm=${cvA[-1]}
+
+            if [ "$1" == "c" ]; then
+                updateContainer $lv
+                exit 0
+            fi
 
 
             if [ "$lvM" -gt "$cvM" ]; then
@@ -395,7 +405,7 @@ dispatcher () {
             down
         ;;
         "update"|"upgrade")
-            checkUpdate
+            checkUpdate $2
         ;;
         "reset")
             reset
@@ -621,7 +631,7 @@ reset () {
         then
             docker volume rm user-data
         fi
-        
+
         run
     fi
 }
@@ -903,10 +913,13 @@ help()
    echo
    echo "restore                            Start Database Restore"
    echo
-   echo "update|upgrade                     Update Container  (Data Persists)"
-   echo "reset                              Reset Container  (Data in volumes lost)"
+   echo "reset                              Reset Container  (Prompts for type)"
    echo
    echo "ssh                                Print your ssh key"
+   echo
+   echo "update|upgrade                     Starts update check (Container and Script)"
+   echo "  -  m                             Force Manager Update"
+   echo "  -  v                             Force Container Update"
    echo
    echo "text|subl|sublime                  Start Sublime Text"
    echo "merge                              Start Sublime Merge"
