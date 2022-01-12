@@ -12,7 +12,7 @@ init () {
 
     if exists
     then
-        if [[ ! -v 1 ]]
+        if [ -z "$1" ]
         then
             shell
         else
@@ -283,7 +283,7 @@ dispatcher () {
             printStatus
         ;;
         "logs"|"log"|"l")
-            if [[ -v 2 ]]; then
+            if [ ! -z "$2" ]; then
                 log $2
             else
                 dockerlog
@@ -516,7 +516,7 @@ run () {
 }
 
 runcommand () {
-    if [[ -v DOCKER_RUN_COMMAND ]]
+    if [ ! -z "$DOCKER_RUN_COMMAND" ]
     then
         return 0
     else
