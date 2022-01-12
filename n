@@ -28,6 +28,7 @@ updateScript () {
         echo "Docker Manager Update Available"
         echo "To install, please re-run as root. 'sudo n'"
         exit 0
+    fi
     }
 
 startCheck () {
