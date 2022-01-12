@@ -111,7 +111,7 @@ updateScript () {
 
 updateContainer () {
     getenv
-    echo "Starting Container Update to $1"
+    echo "Updating 2nform to $1"
     IFS=':' read -ra ctA <<< "$DOCKER_RUN_COMMAND"
     ctag=${ctA[${#ctA[@]}-1]}
     sed -i.bak "s/docker-local-dev:$ctag/docker-local-dev:$1/" $RUN_CONFIG_DIR
