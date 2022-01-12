@@ -2,24 +2,27 @@
 ########### DO NOT MOVE currentVersion ON LINE 5 #####
 checkUpdate () {
     echo "Checking for Updates..."
-    currentVersion=1
+    currentVersion=2
     latestVersion=$(curl https://raw.githubusercontent.com/oldmanz/docker-manager/main/n 2> /dev/null | sed '5!d')
     IFS='=' read -ra lvArray <<< "$latestVersion"
     lv=${lvArray[-1]}
     re='^[0-9]+$'
     if ! [[ $lv =~ $re ]] ; then
-        echo "error: Updater Error" >&2
+        echo "Updater Error" >&2
     fi
     if [ "$lv" -gt "$currentVersion" ]; then
         updateScript
+    else
+        echo "No Updates!"
     fi
-    sleep 3
 }
 
 updateScript () {
-    echo "Updating"
+    echo "Updating...."
     ndir=$(eval which n)
     wget https://raw.githubusercontent.com/oldmanz/docker-manager/main/n -O ${ndir} && sudo chmod +x ${ndir} 
+    sleep 3
+    echo "Done!"
 }
 
 startCheck () {
