@@ -2,7 +2,7 @@
 ########### DO NOT MOVE currentVersion ON LINE 5 #####
 checkUpdate () {
     echo "Checking for Manager Updates..."
-    currentVersion=3
+    currentVersion=4
     latestVersion=$(curl https://raw.githubusercontent.com/oldmanz/docker-manager/main/n 2> /dev/null | sed '5!d')
     IFS='=' read -ra lvArray <<< "$latestVersion"
     lv=${lvArray[${#lvArray[@]}-1]}
@@ -408,8 +408,11 @@ dispatcher () {
         "remove")
             down
         ;;
-        "update"|"upgrade")
+        "update")
             checkUpdate $2
+        ;;
+        "upgrade")
+            reset soft
         ;;
         "reset")
             reset
@@ -594,7 +597,7 @@ restore () {
 }
         
 
-update () {
+2update () {
     if down
     then
         if run
@@ -621,19 +624,20 @@ reset () {
         then
             down
         fi
-        if yesno "Do you want to remove postgres-data?"
-        then
-            docker volume rm postgres-data
+        if [ "$1" != "soft" ]; then
+            if yesno "Do you want to remove postgres-data?"
+            then
+                docker volume rm postgres-data
+            fi
+            if yesno "Do you want to remove 2nform Project Volume?"
+            then
+                docker volume rm 2nform
+            fi
+            if yesno "Do you want to remove user-data?"
+            then
+                docker volume rm user-data
+            fi
         fi
-        if yesno "Do you want to remove 2nform Project Volume?"
-        then
-            docker volume rm 2nform
-        fi
-        if yesno "Do you want to remove user-data?"
-        then
-            docker volume rm user-data
-        fi
-
         run
     fi
 }
@@ -918,11 +922,12 @@ help()
    echo
    echo "restore                            Start Database Restore"
    echo
+   echo "upgrade                            Drop and re-run Contaier."
    echo "reset                              Reset Container  (Prompts for type)"
    echo
    echo "ssh                                Print your ssh key"
    echo
-   echo "update|upgrade                     Starts update check (Container and Script)"
+   echo "update                             Starts update check (Container and Script)"
    echo "  -  m                             Force Manager Update"
    echo "  -  v                             Force Container Update"
    echo
