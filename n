@@ -11,6 +11,7 @@ checkUpdate () {
         echo "Updater Error" >&2
     fi
     if [ "$lv" -gt "$currentVersion" ]; then
+        echo "Manager Update Availablve ($currentVersion > $lv)"
         updateScript
     else
         echo "No Manager Updates!"
