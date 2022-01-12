@@ -1,19 +1,45 @@
 #!/bin/bash
 ########### DO NOT MOVE currentVersion ON LINE 4 #####
 checkUpdate () {
+    echo "Checking for Updates..."
     currentVersion=1
-    latestVersion=$(curl https://raw.githubusercontent.com/oldmanz/docker-manager/main/n 2> /dev/null | head -n4)
-    lV=$(eval $latestVersion)
-    echo $lV
+    latestVersion=$(curl https://raw.githubusercontent.com/oldmanz/docker-manager/main/n 2> /dev/null | sed '4!d')
+    IFS='=' read -ra lvArray <<< "$latestVersion"
+    lv=${lvArray[-1]}
+    re='^[0-9]+$'
+    if ! [[ $lv =~ $re ]] ; then
+        echo "error: Updater Error" >&2; exit 1
+    fi
+    if [ "$lv" -gt "$currentVersion" ]; then
+        updateScript
+    fi
+    sleep 3
 }
 
 updateScript () {
+    echo "Updating"
     ndir=$(eval which n)
     wget https://raw.githubusercontent.com/oldmanz/docker-manager/main/n -O ${ndir} && sudo chmod +x ${ndir} 
 }
 
+startCheck () {
+    getenv
+    day=$( date +%d )
+    if [ -z "$UPDATE_DATE" ]; then
+        echo "UPDATE_DATE=$day" >> "$RUN_CONFIG_DIR"
+        checkUpdate
+    else
+        if [ $day -ne $UPDATE_DATE ]; then
+            checkUpdate
+            sed -i "2s/.*/UPDATE_DATE=$day/" $RUN_CONFIG_DIR
+        fi 
+    fi
+    getenv
+}
+
+
 init () {
-    checkUpdate
+    startCheck
     getenv
     status
 
