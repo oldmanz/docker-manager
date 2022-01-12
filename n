@@ -395,7 +395,7 @@ dispatcher () {
             down
         ;;
         "update"|"upgrade")
-            update
+            checkUpdate
         ;;
         "reset")
             reset
@@ -603,12 +603,25 @@ resetPostgres () {
 }
 
 reset () {
-    if yesno "This will remove all persisted data. (postgres, 2n-projects, and user config) Are you sure you want to continue?"
+    if exists
     then
-        down
-        docker volume rm 2nform
-        docker volume rm postgres-data
-        docker volume rm user-data
+        if isrunning
+        then
+            down
+        fi
+        if yesno "Do you want to remove postgres-data?"
+        then
+            docker volume rm postgres-data
+        fi
+        if yesno "Do you want to remove 2nform Project Volume?"
+        then
+            docker volume rm 2nform
+        fi
+        if yesno "Do you want to remove user-data?"
+        then
+            docker volume rm user-data
+        fi
+        
         run
     fi
 }
@@ -814,6 +827,7 @@ ports () {
     "15432:5432" "Postgres for Dbeaver" ON \
     "9003:9003" "PHP XDebug" ON \
     "35729:35729" "Chrome Live Reload" ON \
+    "5000:5000" "Flask Ports" ON \
     "3000:3000" "Node API Ports" ON 3>&2 2>&1 1>&3
     )
     export DOCKER_PORTS=$CHOICE
