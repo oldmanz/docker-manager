@@ -32,18 +32,7 @@ checkUpdate () {
         IFS='"' read -ra cvArray <<< "$dirtyCv"
         cv=${cvArray[0]}
 
-        ### Find latest numbered tag in git Gets lv###
-        dockerTags=$(wget -q https://registry.hub.docker.com/v1/repositories/2nform/docker-local-dev/tags -O -  | sed -e 's/[][]//g' -e 's/"//g' -e 's/ //g' | tr '}' '\n'  | awk -F: '{print $3}')
-        loopVal=0
-        for tag in $dockerTags
-        do
-            if [ "$tag" != "latest" ]; then
-                if (( $(echo "$tag > $loopVal" |bc -l) )); then
-                    loopVal=$tag
-                fi
-            fi
-        done
-        lv=$loopVal
+        findLatestTag
 
         if [ "$cv" == "latest" ]; then
             updateContainer $lv
@@ -93,6 +82,22 @@ checkUpdate () {
         echo "No Container Updates"
 
     fi
+}
+
+findLatestTag () {
+
+    ### Find latest numbered tag in git Gets lv###
+    dockerTags=$(wget -q https://registry.hub.docker.com/v1/repositories/2nform/docker-local-dev/tags -O -  | sed -e 's/[][]//g' -e 's/"//g' -e 's/ //g' | tr '}' '\n'  | awk -F: '{print $3}')
+    loopVal=0
+    for tag in $dockerTags
+    do
+        if [ "$tag" != "latest" ]; then
+            if (( $(echo "$tag > $loopVal" |bc -l) )); then
+                loopVal=$tag
+            fi
+        fi
+    done
+    export lv=$loopVal
 }
 
 updateScript () {
@@ -810,7 +815,10 @@ setup () {
         git_password="-e GIT_PASSWORD=$GIT_PASSWORD"
     fi
 
-    docker="$docker_start $p_string -e GIT_USERNAME=$GIT_USERNAME -e GIT_EMAIL=$GIT_EMAIL $git_password -v $DOCKER_PROJECT_FOLDER:/var/www -v $DOCKER_DUMP_FOLDER:/dump -v $DOCKER_DATA_FOLDER:/var/lib/postgresql -v $DOCKER_USER_FOLDER:/root -h 2nform --name 2nform 2nform/docker-local-dev:latest"
+    findLatestTag
+    echo $lv
+
+    docker="$docker_start $p_string -e GIT_USERNAME=$GIT_USERNAME -e GIT_EMAIL=$GIT_EMAIL $git_password -v $DOCKER_PROJECT_FOLDER:/var/www -v $DOCKER_DUMP_FOLDER:/dump -v $DOCKER_DATA_FOLDER:/var/lib/postgresql -v $DOCKER_USER_FOLDER:/root -h 2nform --name 2nform 2nform/docker-local-dev:$lv"
     
     getconf
     echo "$RUN_CONFIG_DIR"
