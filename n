@@ -117,7 +117,7 @@ startCheck () {
         echo "UPDATE_DATE=$day" >> "$RUN_CONFIG_DIR"
         checkUpdate
     else
-        if [ $day -eq $UPDATE_DATE ]; then
+        if [ $day -ne $UPDATE_DATE ]; then
             checkUpdate
             sed -i "2s/.*/UPDATE_DATE=$day/" $RUN_CONFIG_DIR
         fi 
