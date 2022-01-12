@@ -1,7 +1,19 @@
 #!/bin/bash
+########### DO NOT MOVE currentVersion ON LINE 4 #####
+checkUpdate () {
+    currentVersion=1
+    latestVersion=$(curl https://raw.githubusercontent.com/oldmanz/docker-manager/main/n 2> /dev/null | head -n4)
+    lV=$(eval $latestVersion)
+    echo $lV
+}
 
+updateScript () {
+    ndir=$(eval which n)
+    wget https://raw.githubusercontent.com/oldmanz/docker-manager/main/n -O ${ndir} && sudo chmod +x ${ndir} 
+}
 
 init () {
+    checkUpdate
     getenv
     status
 
@@ -701,7 +713,7 @@ volumes () {
         fi
     fi
 
-    if yesno "Do you want to use you home directory for the database dump folder?"
+    if yesno "Do you want to use your home directory for the database dump folder?"
     then
         export DOCKER_DUMP_FOLDER="$HOME/dump"
     else
@@ -776,4 +788,4 @@ help()
 
 }
 
-init $1 $2 $3 $4
+init $@
