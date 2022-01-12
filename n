@@ -5,7 +5,7 @@ checkUpdate () {
     currentVersion=2
     latestVersion=$(curl https://raw.githubusercontent.com/oldmanz/docker-manager/main/n 2> /dev/null | sed '5!d')
     IFS='=' read -ra lvArray <<< "$latestVersion"
-    lv=${lvArray[-1]}
+    lv=${lvArray[${#lvArray[@]}-1]}
     re='^[0-9]+$'
     if ! [[ $lv =~ $re ]] ; then
         echo "Updater Error" >&2
@@ -28,7 +28,7 @@ checkUpdate () {
         ### Inspect current continers version.  GETS cv ##
         dockerInspect=$(eval docker inspect 2nform | grep 2nform/docker-local-dev:)
         IFS=':' read -ra dcvArray <<< "$dockerInspect"
-        dirtyCv=${dcvArray[-1]}
+        dirtyCv=${dcvArray[${#dcvArray[@]}-1]}
         IFS='"' read -ra cvArray <<< "$dirtyCv"
         cv=${cvArray[0]}
 
@@ -52,9 +52,9 @@ checkUpdate () {
             IFS='.' read -ra cvA <<< "$cv"
 
             lvM=${lvA[0]}
-            lvm=${lvA[-1]}
+            lvm=${lvA[${#lvA[@]}-1]}
             cvM=${cvA[0]}
-            cvm=${cvA[-1]}
+            cvm=${cvA[${#cvA[@]}-1]}
 
             if [ "$1" == "c" ]; then
                 updateContainer $lv
@@ -91,7 +91,6 @@ checkUpdate () {
             fi
         fi
         echo "No Container Updates"
-       exit 0 
 
     fi
 }
@@ -109,7 +108,7 @@ updateContainer () {
     getenv
     echo "Starting Container Update to $1"
     IFS=':' read -ra ctA <<< "$DOCKER_RUN_COMMAND"
-    ctag=${ctA[-1]}
+    ctag=${ctA[${#ctA[@]}-1]}
     sed -i "s/docker-local-dev:$ctag/docker-local-dev:$1/" $RUN_CONFIG_DIR
     getenv 
     if [ ! -z "$2" ]; then
