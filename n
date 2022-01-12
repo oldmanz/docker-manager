@@ -1,14 +1,14 @@
 #!/bin/bash
-########### DO NOT MOVE currentVersion ON LINE 4 #####
+########### DO NOT MOVE currentVersion ON LINE 5 #####
 checkUpdate () {
     echo "Checking for Updates..."
     currentVersion=1
-    latestVersion=$(curl https://raw.githubusercontent.com/oldmanz/docker-manager/main/n 2> /dev/null | sed '4!d')
+    latestVersion=$(curl https://raw.githubusercontent.com/oldmanz/docker-manager/main/n 2> /dev/null | sed '5!d')
     IFS='=' read -ra lvArray <<< "$latestVersion"
     lv=${lvArray[-1]}
     re='^[0-9]+$'
     if ! [[ $lv =~ $re ]] ; then
-        echo "error: Updater Error" >&2; exit 1
+        echo "error: Updater Error" >&2
     fi
     if [ "$lv" -gt "$currentVersion" ]; then
         updateScript
