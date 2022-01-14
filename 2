@@ -121,6 +121,7 @@ def dispatcher(args, docker):
 			docker.logs()
 
 
+
 	### Catch All ###
 	else:
 		##  Print error and specific missing commands
@@ -144,8 +145,8 @@ class Config:
 		self.name = name
 
 		## Setup File Path
-		homeDir = os.path.expanduser("~")
-		self.filePath = homeDir + "/.2nform.conf"
+		self.homeDir = os.path.expanduser("~")
+		self.filePath = self.homeDir + "/.2nform.conf"
 
 		## Empty config Object
 		self.config = {}
@@ -210,9 +211,24 @@ class Config:
 				'restart_policy': {"Name": "always"},
 				'name': self.name,
 				'hostname': self.name,
-				'ports': {},
-				'volumes': [],
-				'environment': []
+				'ports': {
+					80 : 80,
+					5432 : 15432,
+					9003 : 9003,
+					3000 : 3000,
+					5000 : 5000,
+					35729 : 35729
+				},
+				'volumes': [
+					'2nform:/var/www',
+					self.homeDir + '/dump:/dump',
+					'postgres-data:/var/lib/postgresql',
+					'user-data:/root'
+				],
+				'environment': [
+					'GIT_USERNAME=',
+					'GIT_EMAIL='
+				]
 			}
 		}
 		self.write()
