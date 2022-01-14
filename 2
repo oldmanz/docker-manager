@@ -1,0 +1,487 @@
+#!/usr/bin/python
+current_version = 1.0
+current_image = "2nform/docker-local-dev:1.2"
+container_name = "2nform"
+
+import time
+import os
+import sys
+import subprocess
+import json
+import types
+
+########### INSTALL / IMPORT Modules #################
+## Attempts to import modules.
+## Installs them if it can't.
+try:
+	import docker
+	from rich.console import Console
+except:
+	print("Modules not found.  Attempting Install...")
+	try:
+		subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'docker'])
+		subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'rich'])
+		print("Installation complete!  Re-run script!")
+	except:
+		print("Couldn't install Modules.  Is pip installed and in path?")
+	sys.exit()
+
+
+####### Main Function #####
+## Sets Up Config, Args, and Updates.
+## Then Passes Args to Dispatcher 
+def main():
+	######## Setup Console Logger ######
+	console = Console()
+
+
+	######## SETUP CONFIG Manager #############
+	## Pass in rich console, and versions.
+	config = Config(console, current_version, current_image, container_name)
+
+	
+	######## ARGS RETRIEVER #######
+	## Pass in rich console
+	args = Args(console)
+
+	
+	########### CHECK FOR UPDATES #######################
+	# Filter out update args to force updates.
+	if args.get(1) == "update":
+		if args.get(2) == "m":
+			console.print ("Starting Forced Manager Update...")
+			#updateManager()
+		elif args.get(2) == "c":
+			console.print ("Starting Forced Container Update...")
+			#updateContainer()
+		else:
+			console.print ("Starting Update")
+
+
+	######## Setup Docker Management #######	
+	## Pass in rich console and container name
+	docker = Docker(console, container_name, config)
+
+
+	######## No Arguments >  Start Shell  ######
+	if not args.get(1):
+		docker.shell()
+		sys.exit()
+
+
+	######## Send all Other Requests to Dispatcher ##########
+	## Pass Args, Docker classes in.
+	dispatcher(args, docker)
+
+
+#### Dispatcher  ######
+## Dispatches to Various Methods by Arguments Passed
+def dispatcher(args, docker):
+	console = Console()
+	## Switch Statments not added till 3.10 (2021)
+	## Using IF-ELSE for backwards compat
+	
+	## Getting args from Args class.
+	arg1 = args.get(1)
+	arg2 = args.get(2)
+	arg3 = args.get(3)
+
+	### Switchboard Ifs ###
+	if arg1 in ["start", "s"]:
+		docker.start()
+	
+	elif arg1 in ["restart", "r"]:
+		docker.restart()
+	
+	elif arg1 in ["stop", "q"]:
+		docker.stop()
+	
+	elif arg1 in ["pause", "p"]:
+		docker.pause()
+	
+	elif arg1 in ["resume", "unpause", "e"]:
+		docker.unpause()
+
+	elif arg1 in ["remove", "drop", "x"]:
+		if arg2 in ["hard", "h", "x"]:
+			if yesno("This will remove all data. Are you sure?", "no"):
+				docker.remove(True)
+		else:
+			if yesno("Are you sure?", "no"):
+				docker.remove()
+
+	elif arg1 in ["reset", "xx"]:
+		if yesno("This will remove all data. Are you sure?", "no"):
+			docker.reset()
+
+	elif arg1 in ["logs", "log", "l"]:
+		if arg2:
+			docker.logs(arg2)
+		else:
+			docker.logs()
+
+
+	### Catch All ###
+	else:
+		##  Print error and specific missing commands
+		console.print("Command " + arg1 + " " + arg2 + " " + arg3 + " : Not Found")
+
+
+
+
+
+
+
+################# CLASSES ################
+
+####### Config  Management ###############
+class Config:
+	def __init__(self, console, version, image, name):
+		## Setup some vars
+		self.console = console
+		self.version = version
+		self.image = image
+		self.name = name
+
+		## Setup File Path
+		homeDir = os.path.expanduser("~")
+		self.filePath = homeDir + "/.2nform.conf"
+
+		## Empty config Object
+		self.config = {}
+		
+		## Create conf if it doesn't exist
+		self.exists()
+
+		## Config Check 
+		self.check()
+
+
+	## Creates config if it doesn't exist
+	## Loads if it Does
+	def exists(self):
+		if not os.path.exists(self.filePath):
+			self.createDefaultConfig()
+		else:
+			try:
+				with open(self.filePath, "r") as configfile:
+					self.config = json.load(configfile)
+			except:
+				self.error()
+
+
+	## Check Config for Errors
+	def check(self):
+		try:
+			assert type(self.get("manager", "version")) == float
+			assert type(self.get("container", "image")) == str
+			assert type(self.get("container", "detach")) == bool
+			assert type(self.get("container", "restart_policy")) == dict
+			assert type(self.get("container", "name")) == str
+			assert type(self.get("container", "hostname")) == str
+			assert type(self.get("container", "ports")) == dict
+			assert type(self.get("container", "volumes")) == list
+			assert type(self.get("container", "environment")) == list
+		except Exception as e:
+			print(e)
+			self.error()
+						
+
+
+	def error(self):
+		self.console.print("There is an error in your config file.")
+		if yesno("Would you like to delete and re-run setup?", "yes"):
+			self.createDefaultConfig()
+			self.console.print("Setup")	
+		else:
+			sys.exit()
+
+
+	## Creates a default config
+	def createDefaultConfig(self):
+		## Define some defaults
+		self.config = {
+			'manager' : {
+				'version': self.version
+			},
+			'container' : {
+				'image': self.image,
+				'detach': True,
+				'restart_policy': {"Name": "always"},
+				'name': self.name,
+				'hostname': self.name,
+				'ports': {},
+				'volumes': [],
+				'environment': []
+			}
+		}
+		self.write()
+
+
+	## Writes Config to File
+	def write(self):
+		## Open File and Write Config
+		with open(self.filePath, 'w') as configfile:
+			json.dump(self.config, configfile,  indent=4)
+
+
+	## Takes Two Strings and returns value.
+	def get(self, title, field=""):
+		try:
+			if field:
+				return self.config[title][field]
+			else:
+				return self.config[title]
+		except:
+			return "NotFound"
+
+
+	## Takes Two Strings and Updates Config Object
+	## Must Write Changes to Update
+	def update(self, title, field, value):
+		self.config[title][field] = value
+
+
+
+#######  Passed Arguments ########
+class Args:
+	def __init__(self, console):
+		## Setup rich console
+		self.console = console
+		
+		## Set args to list of passed args
+		self.args = sys.argv
+
+
+	## Takes index, returns Arg Value
+	## Returns '' if none found
+	def get(self, index):	
+		try:
+			return self.args[index]
+		except:
+			return ""
+
+
+	## Returns length of Args
+	def length(self):
+		return len(self.args)
+
+
+
+####### Docker Management #####
+class Docker:
+	def __init__(self, console, container_name, config):
+		## Setup rich console
+		self.console = console
+
+		## Setup Config
+		self.config = config
+
+		## Set Container Name 
+		self.name = container_name
+
+		## Create client
+		self.client = docker.from_env()
+
+		## Check if container exists
+		self.container = self.container()
+
+		## Get Container Status
+		self.status = self.status()
+
+
+	## Returns container if exists
+	## Starts Setup if No Container
+	## Exits if Docker Not Running or Installed
+	def container(self):
+		try:
+			container = self.client.containers.get(self.name)
+			return container
+		except (docker.errors.NotFound):
+			self.console.print("Setup", style="bold red")
+			self.run()
+			return self.container
+		except (docker.errors.APIError):
+			self.console.print("Docker Down or Not Installed")
+			sys.exit()
+
+
+	## Returns Container Status
+	## Either 'running' or 'exited'
+	def status(self):
+		return self.container.status
+
+
+	## Stop Container
+	def stop(self):
+		try:
+			self.container.stop()
+			self.console.print("Container Stopped")
+		except:
+			self.console.print("Error Stopping Container")
+
+	## Start Container
+	def start(self):
+		try:
+			self.container.start()
+			self.console.print("Container Started")
+		except:
+			self.console.print("Error Starting Container")
+
+	## Restart Container
+	def restart(self):
+		try:
+			self.container.restart()
+			self.console.print("Container Restarted")
+		except:
+			self.console.print("Error Restarting Container")
+
+	## Pause Container
+	def pause(self):
+		try:
+			self.container.pause()
+			self.console.print("Container Paused")
+		except:
+			self.console.print("Error Pausing Container")
+
+	## Unpause Container
+	def unpause(self):
+		try:
+			self.container.unpause()
+			self.console.print("Container Resumed")
+		except:
+			self.console.print("Error Resuming Container")
+
+	## Remove Container
+	## Pass True to drop volumes associated with the container.
+	def remove(self, drop=False):
+		try:
+			self.stop()
+			self.container.remove(v=drop)
+			self.console.print("Container Removed")
+		except e:
+			self.console.print("Error Removing Container")
+
+	def reset(self):
+		try:
+			self.remove(True)
+			self.run()
+		except:
+			self.console.print("Reset Failed")
+
+
+	## Start Shell
+	## TODO - Convert to docker-py. (can't get stdin and tty to work)
+	def shell(self):
+		try:
+			os.system("docker exec -it " + self.name + " zsh")
+		except:
+			self.console.print("Error Starting Shell")
+
+
+	## Show Logs 
+	def logs(self, type=False):
+		if type:
+			os.system("docker exec -it " + self.name + " tail -f /var/log/2nform/" + type + ".log") 
+		else:	
+			os.system("docker logs " + self.name)
+
+
+	## Run the Container
+	def run(self):
+		## Set cc to container config
+		cc = self.config.get("container") 
+		self.container = self.client.containers.run(
+			image = cc["image"],
+			detach = cc["detach"],
+			restart_policy = cc["restart_policy"],
+			name = cc["name"],
+			hostname = cc["hostname"],
+			ports = cc["ports"],
+			volumes = cc["volumes"],
+			environment = cc["environment"]
+			)
+
+		self.console.print("Container Running")
+
+
+
+
+########  Misc Functions  #####################
+
+
+### Yes / No ##
+## Pass question and the default answer
+def yesno(label, default="yes"):
+	
+	console = Console()
+
+	valid = {"yes": True, "y": True, "Y": True,
+			"no": False, "n": False, "N": False}
+	if default is None:
+		prompt = " [y/n] "
+	elif default == "yes":
+		prompt = " [Y/n] "
+	elif default == "no":
+		prompt = " [y/N] "
+	else:
+		raise ValueError("invalid default answer: '%s'" % default)
+
+	while True:
+		sys.stdout.write(label + prompt)
+		choice = input().lower()
+		if default is not None and choice == '':
+			return valid[default]
+		elif choice in valid:
+			return valid[choice]
+		else:
+			sys.stdout.write("Invalid input\n") 
+
+
+
+
+############ Start Main Process ###########
+if __name__=="__main__":
+   main()
+
+
+# n
+#    echo "gui|menu|g                         Open Main Menu"
+
+#    echo "  -  manager                       Open Container Manager"
+#    echo "  -  software                      Open Software Gui"
+#    echo "  -  logs                          Open Logs Gui"
+#    echo "  -  setup                         Start Run Command Setup"
+#    echo
+#    echo "status                             Print Container Info"
+#    echo
+#    echo "start                              Start 2nform Container"
+#    echo "restart                            Restart 2nform Container"
+#    echo "stop                               Stop 2nform Container"
+#    echo "remove                             Remove 2nform Container (Data Persists)"
+#    echo
+#    echo "restore                            Start Database Restore"
+#    echo
+#    echo "upgrade                            Drop and re-run Contaier."
+#    echo "reset                              Reset Container  (Prompts for type)"
+#    echo
+#    echo "ssh                                Print your ssh key"
+#    echo
+#    echo "update                             Starts update check (Container and Script)"
+#    echo "  -  m                             Force Manager Update"
+#    echo "  -  v                             Force Container Update"
+#    echo
+#    echo "text|subl|sublime                  Start Sublime Text"
+#    echo "merge                              Start Sublime Merge"
+#    echo "gitkraken                          Start Git Kraken"
+#    echo "pycharm                            Start Pycharm"
+#    echo  
+#    echo "logs|log|l                         Open Container Logs"
+#    echo "  -  git                           Open Git Cloner Logs"
+#    echo "  -  restore                       Open DB Restore Logs"
+#    echo "  -  REPO (api|ram|...)            Open Project Setup Logs"
+#    echo
+#    echo "REPO (api|ram|...)                 Open Project Folder in Shell"
+#    echo "  -  t|test                        Test Repo"
+#    echo "  -  r|run                         Run Repo"
+#    echo "  -  i|install                     Install Repo"
