@@ -10,8 +10,6 @@ import sys
 import subprocess
 import json
 import types
-import requests
-import re
 from datetime import date
 
 homeDir = os.path.expanduser("~")
@@ -21,14 +19,17 @@ homeDir = os.path.expanduser("~")
 ## Installs them if it can't.
 try:
 	import docker
+	from docker.utils import kwargs_from_env
 	from rich.console import Console
 	from rich.table import Table
 	from rich.progress import Progress
+	import requests
 except:
 	print("Modules not found.  Attempting Install...")
 	try:
 		subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'docker'])
 		subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'rich'])
+		subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'requests'])
 		print("Installation complete!  Re-run script!")
 	except:
 		print("Couldn't install Modules.  Is pip installed and in path?")
@@ -203,7 +204,6 @@ class Config:
 	## Check Config for Errors
 	def check(self):
 		try:
-			assert type(self.get("manager", "version")) == float
 			assert type(self.get("manager", "setup")) == bool
 			assert type(self.get("manager", "lastChecked")) == str
 			assert type(self.get("container", "lastChecked")) == str
@@ -400,7 +400,7 @@ class Docker:
 
 		## Create client
 		self.client = docker.from_env()
-		self.api = docker.APIClient(base_url='unix://var/run/docker.sock', version="auto")
+		self.api = docker.APIClient(**kwargs_from_env())
 
 		## Check if container exists
 		self.container = self.container()
