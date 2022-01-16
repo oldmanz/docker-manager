@@ -1,6 +1,6 @@
 #!/usr/bin/python
 current_version = 1.0
-current_image = "2nform/docker-local-dev:1.2"
+current_image = "2nform/docker-local-dev:1.1"
 container_name = "2nform"
 
 
@@ -46,7 +46,7 @@ def main():
 
 	######## SETUP CONFIG Manager #############
 	## Pass in rich console, and versions.
-	config = Config(console, current_version, current_image, container_name)
+	config = Config()
 
 	
 	######## ARGS RETRIEVER #######
@@ -54,16 +54,20 @@ def main():
 	args = Args(console)
 	
 	########### CHECK FOR UPDATES #######################
-	# Filter out update args to force updates.
+	# Filter out update arg to force updates.
+	updater = Updater(config)
+
 	if args.get(1) == "update":
 		console.print ("Starting Update...")
-		updateManager(config)
+		updater.startUpdate()
 
 	## Check if update needed. 
 	else:	
 		today = date.today()
 		if not config.get("manager", "lastChecked") == str(today):
-			updateManager(config)
+			updater.startUpdate()
+		if not config.get("container", "lastChecked") == str(today):
+			updater.startUpdate()
 
 
 
@@ -133,15 +137,25 @@ def dispatcher(args, docker, config):
 		else:
 			docker.logs()
 
+	elif arg1 in ["ssh"]:
+		docker.ssh()
+
 	elif arg1 in ["config"]:
 		config.view()
+
+	elif arg1 in ["help", "h"]:
+		showHelp()
+
+	## Handled before dispatcher  Just Exit here
+	elif arg1 in ["update"]:
+		sys.exit()
 
 
 
 	### Catch All ###
 	else:
 		##  Print error and specific missing commands
-		console.print("Command " + arg1 + " " + arg2 + " " + arg3 + " : Not Found")
+		console.print("[red]Command " + arg1 + " " + arg2 + " " + arg3 + " : [red]Not Found")
 
 
 
@@ -153,12 +167,12 @@ def dispatcher(args, docker, config):
 
 ####### Config  Management ###############
 class Config:
-	def __init__(self, console, version, image, name):
+	def __init__(self):
 		## Setup some vars
-		self.console = console
-		self.version = version
-		self.image = image
-		self.name = name
+		self.console = Console()
+		self.version = current_version
+		self.image = current_image
+		self.name = container_name
 
 		## Setup File Path
 		self.homeDir = homeDir
@@ -193,6 +207,7 @@ class Config:
 			assert type(self.get("manager", "version")) == float
 			assert type(self.get("manager", "setup")) == bool
 			assert type(self.get("manager", "lastChecked")) == str
+			assert type(self.get("container", "lastChecked")) == str
 			assert type(self.get("container", "image")) == str
 			assert type(self.get("container", "detach")) == bool
 			assert type(self.get("container", "restart_policy")) == dict
@@ -221,9 +236,10 @@ class Config:
 			'manager' : {
 				'version': self.version,
 				'setup': False,
-				'lastChecked': '2021-01-14'
+				'lastChecked': '2022-01-14'
 			},
 			'container' : {
+				'lastChecked': '2022-01-14',
 				'image': self.image,
 				'detach': True,
 				'restart_policy': {"Name": "always"},
@@ -292,7 +308,7 @@ class Config:
 		cc = self.config.get("container")
 
 		## Add versions to version table		
-		tableVersions.add_row(str(cm["version"]), cc["image"])
+		tableVersions.add_row("[red]"+str(cm["version"]), "[red]"+cc["image"])
 
 		## Show tables
 		self.console.print(tableVersions)
@@ -320,15 +336,15 @@ class Config:
 		## Create sub tables
 		pTable = Table(show_header=False, box=None)
 		for port in ports:
-			pTable.add_row(str(port) + " : " + str(ports[port]))
+			pTable.add_row("[yellow]"+ str(port) + " : " + str(ports[port]))
 
 		vTable = Table(show_header=False, box=None)
 		for volume in volumes:
-			vTable.add_row(volume)
+			vTable.add_row("[magenta]"+volume)
 
 		eTable = Table(show_header=False, box=None)
 		for env in envs:
-			eTable.add_row(env)
+			eTable.add_row("[green]"+env)
 
 		## Add sub tables to main
 		table.add_row(
@@ -493,6 +509,11 @@ class Docker:
 			clear()
 		except:
 			self.console.print("Error Starting Shell")
+
+	## Show SSH Key
+	def ssh(self):
+		os.system("docker exec -it " + self.name + " cat /dump/ssh.txt") 
+
 
 
 	## Show Logs 
@@ -891,6 +912,148 @@ class Setup:
 		sys.exit()
 
 
+class Updater():
+	def __init__(self, config, force=False):
+		self.config = config
+		self.force = force
+		self.console = Console()
+		self.url = "https://raw.githubusercontent.com/oldmanz/docker-manager/main/n"
+		self.today = str(date.today())
+		self.r = self.requestRemote()
+
+	
+	def requestRemote(self):
+		try:
+			r = requests.get(self.url, allow_redirects=True)
+			return r
+		except:
+			console.print("[red]Remote Not Available")
+			return False
+
+
+	def updateConfig(self, type="manager"):
+		if type == "manager" or type == "both":
+			self.config.update("manager", "lastChecked", self.today)
+		if type == "container" or type == "both":
+			self.config.update("container", "image", current_image)
+			self.config.update("container", "lastChecked", self.today)
+		
+		self.config.write()
+
+
+	def checkManager(self):
+		if self.r:
+			for line in self.r.iter_lines():
+				try:
+					decoded = line.decode('utf8', 'strict')
+					splitLines = decoded.split("=")
+					if splitLines[0] in ["current_version ", "current_version"]:
+						latest_version = splitLines[1]
+						return latest_version
+					else:
+						self.console.print("No Manager Updates")
+						self.updateConfig()
+						return False
+				except:
+					console.print("[red]Remote Error")
+					self.updateConfig()
+					return False
+		else:
+			return False
+
+	def checkContainer(self):
+		## Get Current Version From Config
+		ci = self.config.get("container", "image")
+		## Get latest version from manager
+		li = current_image
+		## Split images to get version
+		cv = ci.split(":")
+		lv = li.split(":")
+
+		## Compare versions
+		if float(cv[1]) != float(lv[1]):
+			c = str(cv[1])
+			l = str(lv[1])
+			## Set vars to array of version
+			self.ca = c.split(".")
+			self.la = l.split(".")
+			return True
+		else:
+			self.console.print("No Container Updates")
+			self.updateConfig("container")
+			return False
+
+
+	def startUpdate(self, force=False):
+		if force or self.checkManager():
+			if self.updateManager():
+				sys.exit()
+		elif self.checkContainer():
+			self.updateContainer()
+
+		else:
+			self.console.print("[yellow]No Updates")
+			return False
+
+
+	def updateManager(self):
+		
+		if getOS() == "windows":
+			filePath = r'C:\\Windows\System32\n.py'
+		else:
+			filePath = "/usr/local/bin/n"
+		
+		try:
+			open(filePath, 'wb').write(self.r.content)
+			self.updateConfig()
+			console.print("[green]Updated!")
+			return True
+		except Exception as e:
+			try:
+				downFile = homeDir+"/n-2nform-download"
+				open(downFile, 'wb').write(self.r.content)
+
+				if getOS() == "windows":
+					subprocess.call(['copy', downFile, filePath])
+				else:
+					subprocess.call(['sudo', 'cp', downFile, filePath])
+					subprocess.call(['sudo', 'chmod', '+x', filePath])
+				os.remove(downFile)
+
+				self.updateConfig()
+				self.console.print("[green]Updated!")
+				return True
+			except Exception as e:
+				print(e)
+				self.console.print("Error")
+				self.console.print("Can't Update")
+				self.updateConfig()
+				return False
+
+
+	def updateContainer(self, major=False):
+		if int(self.la[0]) != int(self.ca[0]):
+			self.console.print("This is a Major Version Container Update.")
+			self.console.print("All data will need to be dropped.")
+			if yesno("Would you like to proceed?", "no"):
+				drop=True
+			else:
+				self.console.print("Update Aborted")
+				self.console.print("To start update, run 'n update'")
+				sys.exit()
+		else:
+			drop=False
+
+		self.console.print("Starting Container Update")
+		self.updateConfig("container")
+		docker = Docker(self.config)
+		docker.remove(drop=drop)
+		docker.run()
+		self.console.print("Container Updated")
+		sys.exit()
+
+
+
 
 ########  Misc Functions  #####################
 
@@ -923,50 +1086,6 @@ def yesno(label, default="yes"):
 			console.print("[bold red]Invalid input\n") 
 
 
-def updateManager(config, force=False):
-	console = Console()
-	url = "https://raw.githubusercontent.com/oldmanz/docker-manager/main/n"
-	today = str(date.today())
-
-	try:
-		r = requests.get(url, allow_redirects=True)
-	except:
-		console.print("[red]Remote Not Available")
-		config.update("manager", "lastChecked", today)
-		return False
-
-	for line in r.iter_lines():
-		if re.match('current_version.+', str(line)):
-			print(line)
-		
-
-	if getOS() == "windows":
-		filePath = r'C:\\Windows\System32\n.py'
-	else:
-		filePath = "/usr/local/bin/n"
-	
-	try:
-		open(filePath, 'wb').write(r.content)
-		config.update("manager", "lastChecked", today)
-		config.write()
-		console.print("[green]Updated!")
-	except Exception as e:
-		try:
-			downFile = homeDir+"/n-2nform-download"
-			open(downFile, 'wb').write(r.content)
-
-			if getOS() == "windows":
-				subprocess.call(['copy', downFile, filePath])
-			else:
-				subprocess.call(['sudo', 'cp', downFile, filePath])
-			os.remove(downFile)
-			config.update("manager", "lastChecked", today)
-			config.write()
-			console.print("[green]Updated!")
-		except Exception as e:
-			console.print("Error")
-			console.print("Can't Update")
-
 
 def getOS():
 	if os.name == 'nt':
@@ -989,6 +1108,43 @@ def clear():
 
 
 
+def showHelp():
+	console = Console()
+	table = Table(
+				show_header=True, 
+				header_style="bold blue", 
+				title="Docker Manager Command Reference", 
+				title_style="bold red"
+			)
+	table.add_column("Command")
+	table.add_column("Description")
+
+	help = [
+		["[blue]n [yellow](alone)", "[yellow]Start Setup / Daily Update / Start Shell"],
+		["",""],
+		["[blue]start[yellow]|[blue]s", "[yellow]Start Container"],
+		["[blue]restart[yellow]|[blue]r", "[yellow]Restart Container"],
+		["[blue]stop[yellow]|[blue]q", "[yellow]Stop Container"],
+		["[blue]pause[yellow]|[blue]p", "[yellow]Pause Container"],
+		["[blue]resume[yellow]|[blue]unpause[yellow]|[blue]u", "[yellow]Resume Container"],
+		["",""],
+		["[blue]update", "[yellow]Force System Update.  [magenta](Same as Daily Check)"],
+		["[blue]remove[yellow]|[blue]drop[yellow]|[blue]x", "[yellow]Remove Container [green](Data Persists)"],
+		["[blue]reset[yellow]|[blue]xx", "[yellow]Reset Container [red](Data Lost)"],
+		["",""],
+		["[blue]logs[yellow]|[blue]l", "[yellow]Show Container Logs"],
+		["[blue]logs [yellow][[blue]api[yellow]|[blue]ram[yellow]|[blue]...[yellow]]", "[yellow]Display Custom Logs"],
+		["",""],
+		["[blue]ssh", "[yellow]Print your ssh key"],
+		["[blue]config", "[yellow]View Current Manager Config"],
+		["",""],
+		["[blue]help[yellow]|[blue]h", "[yellow]This!"]
+	]
+
+	for i in help:
+		table.add_row(i[0], i[1])
+
+	console.print(table)
 
 
 ############ Start Main Process ###########
