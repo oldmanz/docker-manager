@@ -1,952 +1,1038 @@
-#!/bin/bash
-########### DO NOT MOVE currentVersion ON LINE 5 #####
-checkUpdate () {
-    echo "Checking for Manager Updates..."
-    currentVersion=4
-    latestVersion=$(curl https://raw.githubusercontent.com/oldmanz/docker-manager/main/n 2> /dev/null | sed '5!d')
-    IFS='=' read -ra lvArray <<< "$latestVersion"
-    lv=${lvArray[${#lvArray[@]}-1]}
-    re='^[0-9]+$'
-    if ! [[ $lv =~ $re ]] ; then
-        echo "Updater Error" >&2
-    fi
-    if [ "$1" == "m" ]; then
-        echo "Manager Force Update"
-        updateScript $lv
-        exit 0
-    fi
-    if [ "$lv" -gt "$currentVersion" ]; then
-        echo "Manager Update Availablve ($currentVersion > $lv)"
-        updateScript $lv
-    else
-        echo "No Manager Updates!"
-    fi
-
-    if exists; then
-        echo "Checking for Container Updates"
-        
-        ### Inspect current continers version.  GETS cv ##
-        dockerInspect=$(eval docker inspect 2nform | grep 2nform/docker-local-dev:)
-        IFS=':' read -ra dcvArray <<< "$dockerInspect"
-        dirtyCv=${dcvArray[${#dcvArray[@]}-1]}
-        IFS='"' read -ra cvArray <<< "$dirtyCv"
-        cv=${cvArray[0]}
-
-        findLatestTag
-
-        if [ "$cv" == "latest" ]; then
-            updateContainer $lv
-        else
-            IFS='.' read -ra lvA <<< "$lv"
-            IFS='.' read -ra cvA <<< "$cv"
-
-            lvM=${lvA[0]}
-            lvm=${lvA[${#lvA[@]}-1]}
-            cvM=${cvA[0]}
-            cvm=${cvA[${#cvA[@]}-1]}
-
-            if [ "$1" == "c" ]; then
-                updateContainer $lv
-                exit 0
-            fi
-
-
-            if [ "$lvM" -gt "$cvM" ]; then
-                echo "Major Version Container Update. ($cv > $lv)"
-                echo "Updating will remove postgres-data!"
-                read -p "Would you like to update?" -n 1 -r
-                echo   
-                if [[ $REPLY =~ ^[Yy]$ ]]
-                then
-                    updateContainer $lv "drop"
-                else
-                    echo "Update Cancelled By User"
-                    echo "You will not be asked again until tomorrow!"
-                fi
-
-            elif [ "$lvm" -gt "$cvm" ]; then
-                echo "Minor Version Container Update. ($cv > $lv)"
-                echo "Updating will persist all data."
-                read -p "Would you like to update?" -n 1 -r
-                echo   
-                if [[ $REPLY =~ ^[Yy]$ ]]
-                then
-                    updateContainer $lv
-                else
-                    echo "Update Cancelled By User"
-                    echo "You will not be asked again until tomorrow!"
-                fi
-
-            fi
-        fi
-        echo "No Container Updates"
-
-    fi
-}
-
-findLatestTag () {
-
-    ### Find latest numbered tag in git Gets lv###
-    dockerTags=$(wget -q https://registry.hub.docker.com/v1/repositories/2nform/docker-local-dev/tags -O -  | sed -e 's/[][]//g' -e 's/"//g' -e 's/ //g' | tr '}' '\n'  | awk -F: '{print $3}')
-    loopVal=0
-    for tag in $dockerTags
-    do
-        if [ "$tag" != "latest" ]; then
-            if (( $(echo "$tag > $loopVal" |bc -l) )); then
-                loopVal=$tag
-            fi
-        fi
-    done
-    export lv=$loopVal
-}
-
-updateScript () {
-    echo "Update will run as root:"
-    echo "Updating to $1...."
-    ndir=$(eval which n)
-    sudo wget https://raw.githubusercontent.com/oldmanz/docker-manager/main/n -O ${ndir} && sudo chmod +x ${ndir} 
-    sleep 3
-    echo "Done!"
-}
-
-updateContainer () {
-    getenv
-    echo "Updating 2nform to $1"
-    IFS=':' read -ra ctA <<< "$DOCKER_RUN_COMMAND"
-    ctag=${ctA[${#ctA[@]}-1]}
-    sed -i.bak "s/docker-local-dev:$ctag/docker-local-dev:$1/" $RUN_CONFIG_DIR
-    getenv 
-    if [ ! -z "$2" ]; then
-        resetPostgres
-    else
-        update
-    fi
-    echo "Container Updated!"
-    exit 0
-}
-
-startCheck () {
-    getenv
-    day=$( date +%d )
-    if [ -z "$UPDATE_DATE" ]; then
-        echo "UPDATE_DATE=$day" >> "$RUN_CONFIG_DIR"
-        checkUpdate
-    else
-        if [ $day -ne $UPDATE_DATE ]; then
-            checkUpdate
-            sed -i.bak "2s/.*/UPDATE_DATE=$day/" $RUN_CONFIG_DIR
-        fi 
-    fi
-    getenv
-}
-
-
-init () {
-    getenv
-    status
-
-    if ! command -v docker &> /dev/null
-    then
-        error "Docker doesn't appear to be installed. Install using your OS' instructions and re-run the script"
-    fi 
-
-    if exists
-    then
-        startCheck
-        if [ -z "$1" ]
-        then
-            shell
-        else
-          dispatcher $@
-        fi
-    else
-        if yesno "2nform container not created. Would you like to create it now?"
-        then
-            if runcommand
-            then
-                if yesno "Found run command. Use it?"
-                then
-                    run
-                    menu
-                else
-                    setup
-                    menu
-                fi
-            else
-                setup
-                menu
-            fi
-        else
-            exit 0
-        fi
-    fi
-}
-
-menu () {
-    status
-
-    CHOICE=$(
-    whiptail --title "2nform - Docker for Local Dev" --menu "2nform Status : $STATUS" 25 78 16 \
-        "1)" "Container Management" \
-        "2)" "Software" \
-        "3)" "View Logs" \
-        "4)" "View SSH Key" \
-        "5)" "Run Command Setup" 3>&2 2>&1 1>&3
-    )
-
-    case $CHOICE in
-        "1)")
-            manager
-        ;;
-        "2)")
-            software
-        ;;
-        "3)")
-            logs
-        ;;
-        "4)")
-            2ssh
-            menu
-        ;;
-        "5)")
-            setup
-        ;;
-    esac
-}
-
-software () {
-    status
-
-    CHOICE=$(
-    whiptail --title "2nform - Docker for Local Dev" --menu "2nform Status : $STATUS" 25 78 16 \
-        "0)" "Back to Main Menu" \
-        "1)" "Sublime Text" \
-        "2)" "Sublime Merge" \
-        "3)" "Git Kraken" \
-        "4)" "Pycharm" 3>&2 2>&1 1>&3
-    )
-
-    case $CHOICE in
-        "0)")
-            menu
-        ;;
-        "1)")
-            startsoftware text
-        ;;
-        "2)")
-            startsoftware merge
-        ;;
-        "3)")
-            startsoftware gitkraken
-        ;;
-        "4)")
-            startsoftware pycharm
-        ;;
-    esac
-}
-
-logs () {
-    status
-
-    CHOICE=$(
-    whiptail --title "2nform - Logs" --menu "2nform Status : $STATUS" 25 78 16 \
-        "0)" "Back to Main Menu" \
-        "1)" "Container" \
-        "2)" "DB Restore" \
-        "3)" "Git Setup" \
-        "4)" "API" \
-        "5)" "RAM" \
-        "6)" "2NFORM" \
-        "7)" "Report" \
-        "8)" "DB-Functions" \
-        "9)" "Agol-Scripts" 3>&2 2>&1 1>&3
-    )
-
-    case $CHOICE in
-        "0)")
-            menu
-        ;;
-        "1)")
-            dockerlog
-            logs
-        ;;
-        "2)")
-            log restore
-            logs
-        ;;
-        "3)")
-            log git
-            logs
-        ;;
-        "4)")
-            log api
-            logs
-        ;;
-        "5)")
-            log ram
-            logs
-        ;;
-        "6)")
-            log 2nform
-            logs
-        ;;
-        "7)")
-            log report
-            logs
-        ;;
-        "8)")
-            log db-functions
-            logs
-        ;;
-        "9)")
-            log agol-scripts
-            logs
-        ;;
-    esac
-}
-
-
-dockerlog () {
-
-    docker logs 2nform -f
-}
-
-log () {
-    docker exec -it 2nform tail -f /var/log/2nform/$1.log
-}
-
-manager () {
-    status
-
-    CHOICE=$(
-    whiptail --title "2nform - Docker for Local Dev" --menu "2nform Status :  $STATUS" 25 78 16 \
-        "0)" "Back to Main Menu" \
-        "1)" "Drop into container shell" \
-        "2)" "Start or Restart the container" \
-        "3)" "Stop the container" \
-        "4)" "Restore Database with dump file" \
-        "5)" "Update to Latest Container (Data persits: May have side effects)" \
-        "6)" "Delete and Re-create (Complete reset: All data lost)" 3>&2 2>&1 1>&3
-    ) 
-        
-    case $CHOICE in
-        "0)")
-            menu
-        ;;
-        "1)")
-            clear
-            if shell
-            then
-                message "Shell Closed"
-            else
-                message "Error Opening Shell"
-            fi
-            manager
-        ;;
-        "2)")
-            clear
-            if 2restart
-            then
-                message "Container (Re)Started!"
-            else
-                message "Container (Re)Start Failed (It may not exist.)"
-            fi
-            manager
-        ;;
-        "3)")
-            clear
-            if 2stop
-            then
-                message "Container Stopped!"
-            else
-                message "Container Stop Failed (It may not be running)"
-            fi
-            manager
-        ;;
-        "4)")
-            clear
-            if restore
-            then
-                message "Database Restored!"
-            else
-                message "Database Not Restored"
-            fi
-            manager
-        ;;
-        "5)")
-            clear
-            if update
-            then
-                message "Container Updated!"
-            else
-                message "Container Update Failed"
-            fi
-            manager
-        ;;
-        "6)")
-            clear
-            if reset
-            then
-                message "Container Reset!"
-            else
-                message "Container Reset Failed"
-            fi
-            manager
-        ;;
-    esac
-}
-
-dispatcher () {
-
-    case $1 in
-        "start"|"restart")
-            2restart
-        ;;
-        "stop")
-            2stop
-        ;;
-        "remove")
-            down
-        ;;
-        "update")
-            checkUpdate $2
-        ;;
-        "upgrade")
-            reset soft
-        ;;
-        "reset")
-            reset
-        ;;
-        "restore")
-            restore
-        ;;
-        "ssh")
-            2ssh
-        ;;
-        "status")
-            printStatus
-        ;;
-        "logs"|"log"|"l")
-            if [ ! -z "$2" ]; then
-                log $2
-            else
-                dockerlog
-            fi
-        ;;
-        "gui"|"menu"|"g")
-            case $2 in
-            "manager")
-                manager
-            ;;
-            "software")
-                software
-            ;;
-            "logs"|"log")
-                logs
-            ;;
-            "setup")
-                setup
-            ;;
-            *)
-                menu
-            ;;
-        esac
-        ;;
-        "subl"|"text"|"sublime")
-            startsoftware text
-        ;;
-        "merge")
-            startsoftware merge
-        ;;
-        "gitkraken")
-            startsoftware gitkraken
-        ;;
-        "pycharm")
-            startsoftware pycharm
-        ;;
-        "help")
-            help
-        ;;
-        *)
-            injectcommand $@
-
-        ;;    
-    esac
-
-}
-
-2ssh () {
-    clear
-    echo "Copy the below key to you git profile.  (github.com)"
-    echo "..."
-    docker exec -it 2nform cat /dump/ssh.txt
-    echo "..."
-    read  -n 1 -p "Press any key to continue"
-}
-
-injectcommand () {
-    if exists; then
-        if isrunning; then
-            docker exec -it 2nform zsh -c "source $1 && $2 && zsh"
-        fi
-    fi
-}
-
-shell () {
-    if startifstopped
-    then
-        clear
-        if docker exec -it 2nform zsh
-        then
-            clear
-            return 0
-        else
-            return 1
-        fi
-    fi    
-}
-
-2restart () {
-    if exists
-    then
-        echo "(Re)Starting Container"
-        if docker restart 2nform
-        then
-            return 0
-        else
-            return 1
-        fi
-    else
-        echo "No Container"
-        return 1
-    fi
-}
-
-2start () {
-    if exists
-    then
-        if ! isrunning
-        then
-            echo "Starting Container..."
-            if docker start 2nform
-            then
-                return 0
-            else
-                return 1
-            fi
-        else
-            echo "Container Already Running"
-            return 1
-        fi
-    else
-        echo "Container doesn't exist"
-        return 1
-    fi
-
-}
-
-2stop () {
-    if exists
-    then
-        if isrunning
-        then
-            echo "Stopping Container..."
-            if docker stop 2nform
-            then
-                return 0
-            else
-                return 1
-            fi
-        else
-            echo "Container Not Running"
-            return 1
-        fi
-    else
-        echo "Container doesn't exist"
-        return 1
-    fi
-
-}
-
-2remove () {
-    if exists
-    then
-        docker rm 2nform
-        echo "Removed"
-    fi
-}
-
-restore () {
-    if startifstopped
-    then
-        if yesno "Do you have ONE .backup file in your dump folder?"
-        then
-            clear
-            echo "Starting DB Restore"
-            echo "This will take a while!"
-            if docker exec -it 2nform restore
-            then
-                return 0
-            else
-                return 1
-            fi
-        else
-            return 1
-        fi
-    fi
-}
-        
-
-update () {
-    if down
-    then
-        if run
-        then
-            return 0
-        else
-            return 1
-        fi
-    else
-        return 1
-    fi
-}    
-
-resetPostgres () {
-    down
-    docker volume rm postgres-data
-    run
-}
-
-reset () {
-    if exists
-    then
-        if isrunning
-        then
-            down
-        fi
-        if [ "$1" != "soft" ]; then
-            if yesno "Do you want to remove postgres-data?"
-            then
-                docker volume rm postgres-data
-            fi
-            if yesno "Do you want to remove 2nform Project Volume?"
-            then
-                docker volume rm 2nform
-            fi
-            if yesno "Do you want to remove user-data?"
-            then
-                docker volume rm user-data
-            fi
-        fi
-        run
-    fi
-}
-
-down () {
-    if ! runcommand
-    then
-        if ! yesno "Your run command was not found.  If you continue, you will need to re-create it.  Would you like to continue?"
-        then
-            message "Process Aborted!"
-            return 1
-        fi
-
-    fi
-
-    2stop
-    2remove
-    return 0
-}
-
-run () {
-    if runcommand
-    then
-        if eval $DOCKER_RUN_COMMAND
-        then
-            return 0
-        else
-            return 1
-        fi
-    else
-        if setup
-        then
-            return 0
-        else
-            return 1
-        fi
-    fi
-}
-
-runcommand () {
-    if [ ! -z "$DOCKER_RUN_COMMAND" ]
-    then
-        return 0
-    else
-        return 1
-    fi
-}
-
-startifstopped () {
-    if isrunning
-    then
-        return 0
-    else
-        if yesno "2nform is not running.  Would you like to start it?"
-        then
-            2restart
-            return 0
-        else
-            message "Process aborted!"
-            return 1
-        fi
-    fi
-}
-
-isrunning () {
-    if [ "$(docker ps | grep 2nform)" ]
-    then
-        return 0
-    else
-        return 1
-    fi
-}
-
-exists () {
-    if [ "$(docker ps -a | grep 2nform)" ]
-    then
-        return 0
-    else
-        return 1
-    fi
-}
-
-error () {
-    whiptail --title "2nform - Docker Local Dev" --msgbox "$1" --ok-button "exit" 8 78
-    exit 0
-}
-
-message () {
-    whiptail --title "2nform - Docker for Local Dev" --msgbox "$1" 8 78
-}
-
-yesno () {
-    if (whiptail --title "2nform - Docker Local Dev" --yesno "$1" 8 78); then
-    return 0
-else
-    return 1
-fi
-}
-
-
-getconf () {
-    export RUN_CONFIG_DIR="$HOME/.2nform.conf"
-}
-
-
-getenv () {
-    getconf
-    if [ -f $RUN_CONFIG_DIR ]; then
-    . $RUN_CONFIG_DIR
-    fi
-
-
-}
-
-status () {
-    STATUS="No Container"
-
-    if exists
-    then
-        STATUS="Stopped"
-    fi
-
-    if isrunning
-    then
-        STATUS="Running"
-    fi
-
-    return 0
-}
-
-printStatus () {
-    status
-    runcommand
-
-    echo "-------------"
-    echo "Status :  $STATUS"
-    echo "Run Command :  $DOCKER_RUN_COMMAND"
-}
-
-startsoftware () {
-    if startifstopped
-    then
-        if docker exec 2nform $1
-        then
-            return 0
-        else
-            return 1
-        fi
-    fi
-}
-
-setup () {
-    if runcommand
-    then
-        if ! yesno "Would you like to overwrite your existing run command?"
-        then
-            message "Setup aborted!"
-            exit 0
-        fi
-    fi
-    
-    docker_start="docker run -d --restart unless-stopped"
-
-    ports
-
-    for port in $DOCKER_PORTS
-    do
-        p_string="$p_string -p $port"
-    done
-
-    volumes
-
-    git
-
-    if [[ ! -z "$GIT_PASSWORD" ]]
-    then
-        git_password="-e GIT_PASSWORD=$GIT_PASSWORD"
-    fi
-
-    findLatestTag
-    echo $lv
-
-    docker="$docker_start $p_string -e GIT_USERNAME=$GIT_USERNAME -e GIT_EMAIL=$GIT_EMAIL $git_password -v $DOCKER_PROJECT_FOLDER:/var/www -v $DOCKER_DUMP_FOLDER:/dump -v $DOCKER_DATA_FOLDER:/var/lib/postgresql -v $DOCKER_USER_FOLDER:/root -h 2nform --name 2nform 2nform/docker-local-dev:$lv"
-    
-    getconf
-    echo "$RUN_CONFIG_DIR"
-
-    echo "DOCKER_RUN_COMMAND='$docker'" > "$RUN_CONFIG_DIR"
-
-    if yesno "Docker Run command saved in $RUN_CONFIG_DIR.  Would you like to run it now?"
-    then
-        getenv
-        down
-        run
-        menu
-    else
-        exit 0
-    fi
-
-}
-
-ports () {
-    CHOICE=$(whiptail --title "2nform - Docker Run Setup" --ok-button "Continue" --checklist \
-    "Choose Ports to Forward. (HOST:CONTAINER)" 30 100 10 \
-    "80:80" "Main HTTP 2nform Port" ON \
-    "15432:5432" "Postgres for Dbeaver" ON \
-    "9003:9003" "PHP XDebug" ON \
-    "35729:35729" "Chrome Live Reload" ON \
-    "5000:5000" "Flask Ports" ON \
-    "3000:3000" "Node API Ports" ON 3>&2 2>&1 1>&3
-    )
-    export DOCKER_PORTS=$CHOICE
-}
-
-volumes () {
-
-    if yesno "Will you be using VS Code remote container access? (setup volume for project dir)"
-    then
-        export DOCKER_PROJECT_FOLDER="2nform"
-    else
-        if yesno "Do you want your project folder in your home directory?"
-        then
-            export DOCKER_PROJECT_FOLDER="$HOME/2nform"
-        else
-            export DOCKER_PROJECT_FOLDER=$(whiptail --inputbox "What directory for project folder? (must be absolute path)" 8 39 "$HOME/2nform" --title "2nform - Docker Run Setup" 3>&1 1>&2 2>&3)
-
-        fi
-    fi
-
-    if yesno "Do you want to use your home directory for the database dump folder?"
-    then
-        export DOCKER_DUMP_FOLDER="$HOME/dump"
-    else
-        export DOCKER_DUMP_FOLDER=$(whiptail --inputbox "What directory for dump folder? (must be absolute path)" 8 39 "$HOME/dump" --title "2nform - Docker Run Setup" 3>&1 1>&2 2>&3)
-    fi
-
-    export DOCKER_DATA_FOLDER="postgres-data"
-    export DOCKER_USER_FOLDER="user-data"
-}
-
-git () {
-    export GIT_USERNAME=$(whiptail --inputbox "Enter your git username" 8 39  --title "2nform - Docker Run Setup" 3>&1 1>&2 2>&3)
-    export GIT_EMAIL=$(whiptail --inputbox "Enter your git email" 8 39  --title "2nform - Docker Run Setup" 3>&1 1>&2 2>&3)
-
-    if yesno "Do you want to clone with SSH? (recommended)"
-    then
-        message "You will need to add your ssh key to github.  See the main menu after setup is complete."
-        export GIT_PASSWORD=""
-    else
-        export GIT_PASSWORD=$(whiptail --inputbox "Enter your git password or personal access token." 8 39  --title "2nform - Docker Run Setup" 3>&1 1>&2 2>&3)
-    fi
-
-}
-
-
-help()
-{
-   echo "2nform - Docker for Local Dev - Manager"
-   echo 
-   echo "Run 'n' alone for docker shell. (starts setup if container down)"
-   echo "Run 'n gui' for gui manager."
-   echo
-   echo "Direct Command Reference"
-   echo
-   echo "Syntax: n command sub-command"
-   echo "ex: 'n restart' or 'n logs api'"
-   echo
-   echo "Commands:"
-   echo
-   echo "gui|menu|g                         Open Main Menu"
-   echo "  -  manager                       Open Container Manager"
-   echo "  -  software                      Open Software Gui"
-   echo "  -  logs                          Open Logs Gui"
-   echo "  -  setup                         Start Run Command Setup"
-   echo
-   echo "status                             Print Container Info"
-   echo
-   echo "start                              Start 2nform Container"
-   echo "restart                            Restart 2nform Container"
-   echo "stop                               Stop 2nform Container"
-   echo "remove                             Remove 2nform Container (Data Persists)"
-   echo
-   echo "restore                            Start Database Restore"
-   echo
-   echo "upgrade                            Drop and re-run Contaier."
-   echo "reset                              Reset Container  (Prompts for type)"
-   echo
-   echo "ssh                                Print your ssh key"
-   echo
-   echo "update                             Starts update check (Container and Script)"
-   echo "  -  m                             Force Manager Update"
-   echo "  -  v                             Force Container Update"
-   echo
-   echo "text|subl|sublime                  Start Sublime Text"
-   echo "merge                              Start Sublime Merge"
-   echo "gitkraken                          Start Git Kraken"
-   echo "pycharm                            Start Pycharm"
-   echo  
-   echo "logs|log|l                         Open Container Logs"
-   echo "  -  git                           Open Git Cloner Logs"
-   echo "  -  restore                       Open DB Restore Logs"
-   echo "  -  REPO (api|ram|...)            Open Project Setup Logs"
-   echo
-   echo "REPO (api|ram|...)                 Open Project Folder in Shell"
-   echo "  -  t|test                        Test Repo"
-   echo "  -  r|run                         Run Repo"
-   echo "  -  i|install                     Install Repo"
-   echo
-
-}
-
-init $@
+#!/usr/bin/python
+current_version = 1.0
+current_image = "2nform/docker-local-dev:1.2"
+container_name = "2nform"
+
+
+import time
+import os
+import sys
+import subprocess
+import json
+import types
+import requests
+import re
+from datetime import date
+
+homeDir = os.path.expanduser("~")
+
+########### INSTALL / IMPORT Modules #################
+## Attempts to import modules.
+## Installs them if it can't.
+try:
+	import docker
+	from rich.console import Console
+	from rich.table import Table
+	from rich.progress import Progress
+except:
+	print("Modules not found.  Attempting Install...")
+	try:
+		subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'docker'])
+		subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'rich'])
+		print("Installation complete!  Re-run script!")
+	except:
+		print("Couldn't install Modules.  Is pip installed and in path?")
+	sys.exit()
+
+
+####### Main Function #####
+## Sets Up Config, Args, and Updates.
+## Then Passes Args to Dispatcher 
+def main():
+
+	######## Setup Console Logger ######
+	console = Console()
+
+
+	######## SETUP CONFIG Manager #############
+	## Pass in rich console, and versions.
+	config = Config(console, current_version, current_image, container_name)
+
+	
+	######## ARGS RETRIEVER #######
+	## Pass in rich console
+	args = Args(console)
+	
+	########### CHECK FOR UPDATES #######################
+	# Filter out update args to force updates.
+	if args.get(1) == "update":
+		console.print ("Starting Update...")
+		updateManager(config)
+
+	## Check if update needed. 
+	else:	
+		today = date.today()
+		if not config.get("manager", "lastChecked") == str(today):
+			updateManager(config)
+
+
+
+	######## Setup Docker Management #######	
+	## Pass in rich console and container name
+	docker = Docker(config)
+
+	
+
+	######## No Arguments >  Start Shell  ######
+	if not args.get(1):
+		docker.shell()
+
+		sys.exit()
+
+
+
+	######## Send all Other Requests to Dispatcher ##########
+	## Pass Args, Docker classes in.
+	dispatcher(args, docker, config)
+
+
+
+#### Dispatcher  ######
+## Dispatches to Various Methods by Arguments Passed
+def dispatcher(args, docker, config):
+	console = Console()
+	## Switch Statments not added till 3.10 (2021)
+	## Using IF-ELSE for backwards compat
+	
+	## Getting args from Args class.
+	arg1 = args.get(1)
+	arg2 = args.get(2)
+	arg3 = args.get(3)
+
+	### Switchboard Ifs ###
+	if arg1 in ["start", "s"]:
+		docker.start()
+	
+	elif arg1 in ["restart", "r"]:
+		docker.restart()
+	
+	elif arg1 in ["stop", "q"]:
+		docker.stop()
+	
+	elif arg1 in ["pause", "p"]:
+		docker.pause()
+	
+	elif arg1 in ["resume", "unpause", "e"]:
+		docker.unpause()
+
+	elif arg1 in ["remove", "drop", "x"]:
+		if arg2 in ["hard", "h", "x"]:
+			if yesno("This will remove all data. Are you sure?", "no"):
+				docker.remove(True)
+		else:
+			if yesno("Are you sure?", "no"):
+				docker.remove()
+
+	elif arg1 in ["reset", "xx"]:
+		if yesno("This will remove all data. Are you sure?", "no"):
+			docker.reset()
+
+	elif arg1 in ["logs", "log", "l"]:
+		if arg2:
+			docker.logs(arg2)
+		else:
+			docker.logs()
+
+	elif arg1 in ["config"]:
+		config.view()
+
+
+
+	### Catch All ###
+	else:
+		##  Print error and specific missing commands
+		console.print("Command " + arg1 + " " + arg2 + " " + arg3 + " : Not Found")
+
+
+
+
+
+
+
+################# CLASSES ################
+
+####### Config  Management ###############
+class Config:
+	def __init__(self, console, version, image, name):
+		## Setup some vars
+		self.console = console
+		self.version = version
+		self.image = image
+		self.name = name
+
+		## Setup File Path
+		self.homeDir = homeDir
+		self.filePath = self.homeDir + "/.2nform.conf"
+
+		## Empty config Object
+		self.config = {}
+		
+		## Create conf if it doesn't exist
+		self.exists()
+
+		## Config Check 
+		self.check()
+
+
+	## Creates config if it doesn't exist
+	## Loads if it Does
+	def exists(self):
+		if not os.path.exists(self.filePath):
+			self.createDefaultConfig()
+		else:
+			try:
+				with open(self.filePath, "r") as configfile:
+					self.config = json.load(configfile)
+			except:
+				self.error()
+
+
+	## Check Config for Errors
+	def check(self):
+		try:
+			assert type(self.get("manager", "version")) == float
+			assert type(self.get("manager", "setup")) == bool
+			assert type(self.get("manager", "lastChecked")) == str
+			assert type(self.get("container", "image")) == str
+			assert type(self.get("container", "detach")) == bool
+			assert type(self.get("container", "restart_policy")) == dict
+			assert type(self.get("container", "name")) == str
+			assert type(self.get("container", "hostname")) == str
+			assert type(self.get("container", "ports")) == dict
+			assert type(self.get("container", "volumes")) == list
+			assert type(self.get("container", "environment")) == list
+		except Exception as e:
+			self.error()
+						
+
+
+	def error(self):
+		self.console.print("There is an error in your config file.")
+		if yesno("Would you like to reset it?", "yes"):
+			self.createDefaultConfig()	
+		else:
+			sys.exit()
+
+
+	## Creates a default config
+	def createDefaultConfig(self):
+		## Define some defaults
+		self.config = {
+			'manager' : {
+				'version': self.version,
+				'setup': False,
+				'lastChecked': '2021-01-14'
+			},
+			'container' : {
+				'image': self.image,
+				'detach': True,
+				'restart_policy': {"Name": "always"},
+				'name': self.name,
+				'hostname': self.name,
+				'ports': {
+					80 : 80,
+					5432 : 15432,
+					9003 : 9003,
+					3000 : 3000,
+					5000 : 5000,
+					35729 : 35729
+				},
+				'volumes': [
+					'2nform:/var/www',
+					'dump:/dump',
+					'postgres-data:/var/lib/postgresql',
+					'user-data:/root'
+				],
+				'environment': [
+					'GIT_USERNAME=',
+					'GIT_EMAIL='
+				]
+			}
+		}
+		self.write()
+
+
+	## Writes Config to File
+	def write(self):
+		## Open File and Write Config
+		with open(self.filePath, 'w') as configfile:
+			json.dump(self.config, configfile,  indent=4)
+
+
+	## Takes Two Strings and returns value.
+	def get(self, title, field=""):
+		try:
+			if field:
+				return self.config[title][field]
+			else:
+				return self.config[title]
+		except:
+			return None
+
+
+	## Takes Two Strings and Updates Config Object
+	## Must Write Changes to Update
+	def update(self, title, field, value):
+		self.config[title][field] = value
+
+
+	def viewVersion(self):
+		## Setup Version Table
+		tableVersions = Table(
+				show_header=True, 
+				header_style="bold blue", 
+				title="Versions", 
+				title_style="bold red"
+			)
+		tableVersions.add_column("Manager")
+		tableVersions.add_column("Image")
+
+		## Setup Vars
+		cm = self.config.get("manager")
+		cc = self.config.get("container")
+
+		## Add versions to version table		
+		tableVersions.add_row(str(cm["version"]), cc["image"])
+
+		## Show tables
+		self.console.print(tableVersions)
+
+	def viewConfig(self, ports=False, volumes=False, envs=False):
+		## Setup Container Table
+		table = Table(
+				show_header=True, 
+				header_style="bold blue",
+				title="Config",
+				title_style="bold red"
+			)
+		table.add_column("Ports")
+		table.add_column("Volumes")
+		table.add_column("Environment")
+
+		## Setup Vars
+		if not ports or not volumes or not envs:
+			cm = self.config.get("manager")
+			cc = self.config.get("container")
+			ports = cc["ports"]
+			volumes = cc["volumes"]
+			envs = cc["environment"]
+
+		## Create sub tables
+		pTable = Table(show_header=False, box=None)
+		for port in ports:
+			pTable.add_row(str(port) + " : " + str(ports[port]))
+
+		vTable = Table(show_header=False, box=None)
+		for volume in volumes:
+			vTable.add_row(volume)
+
+		eTable = Table(show_header=False, box=None)
+		for env in envs:
+			eTable.add_row(env)
+
+		## Add sub tables to main
+		table.add_row(
+			pTable,
+			vTable,
+			eTable
+		)
+		
+		self.console.print(table)
+
+
+
+	## View Current Config
+	def view(self):
+		self.viewVersion()
+		self.viewConfig()
+
+
+
+#######  Passed Arguments ########
+class Args:
+	def __init__(self, console):
+		## Setup rich console
+		self.console = console
+		
+		## Set args to list of passed args
+		self.args = sys.argv
+
+
+	## Takes index, returns Arg Value
+	## Returns '' if none found
+	def get(self, index):	
+		try:
+			return self.args[index]
+		except:
+			return ""
+
+
+	## Returns length of Args
+	def length(self):
+		return len(self.args)
+
+
+
+####### Docker Management #####
+class Docker:
+	def __init__(self, config):
+		## Setup rich console
+		self.console = Console()
+
+		## Setup Config
+		self.config = config
+
+		## Set Container Name 
+		self.name = container_name
+
+		## Create client
+		self.client = docker.from_env()
+		self.api = docker.APIClient(base_url='unix://var/run/docker.sock', version="auto")
+
+		## Check if container exists
+		self.container = self.container()
+
+		## Get Container Status
+		self.status = self.status()
+
+
+
+
+	## Returns container if exists
+	## Starts Setup if No Container
+	## Exits if Docker Not Running or Installed
+	def container(self):
+		try:
+			container = self.client.containers.get(self.name)
+			return container
+		except (docker.errors.NotFound):
+			## Check if configured and start
+			self.init()
+			return self.container
+		except (docker.errors.APIError):
+			self.console.print("Docker Down or Not Installed", style="bold red")
+			sys.exit()
+
+
+	## Returns Container Status
+	## Either 'running' or 'exited'
+	def status(self):
+		try:
+			return self.container.status
+		except:
+			return "none"
+
+	## Stop Container
+	def stop(self):
+		try:
+			self.console.print("Stopping...", style="blue")
+			self.container.stop()
+			self.console.print("Container Stopped", style="green")
+		except:
+			self.console.print("Error Stopping Container", style="bold red")
+
+	## Start Container
+	def start(self):
+		try:
+			self.console.print("Starting...", style="blue")
+			self.container.start()
+			self.console.print("Container Started", style="bold green")
+		except:
+			self.console.print("Error Starting Container", style="bold red")
+
+	## Restart Container
+	def restart(self):
+		try:
+			self.console.print("Restarting...", style="blue")
+			self.container.restart()
+			self.console.print("Container Restarted", style="bold green")
+		except:
+			self.console.print("Error Restarting Container", style="bold red")
+
+	## Pause Container
+	def pause(self):
+		try:
+			self.console.print("Pausing...", style="blue")
+			self.container.pause()
+			self.console.print("Container Paused", style="green")
+		except:
+			self.console.print("Error Pausing Container", style="bold red")
+
+	## Unpause Container
+	def unpause(self):
+		try:
+			self.container.unpause()
+			self.console.print("Container Resumed")
+		except:
+			self.console.print("Error Resuming Container")
+
+	## Remove Container
+	## Pass True to drop volumes associated with the container.
+	def remove(self, drop=False):
+		try:
+			self.stop()
+			self.container.remove(v=drop)
+			self.console.print("Container Removed")
+		except e:
+			self.console.print("Error Removing Container")
+
+	def reset(self):
+		try:
+			self.remove(True)
+			self.run()
+		except:
+			self.console.print("Reset Failed")
+
+
+	## Start Shell
+	## TODO - Convert to docker-py. (can't get stdin and tty to work)
+	def shell(self):
+		try:
+			clear()
+			os.system("docker exec -it " + self.name + " zsh")
+			clear()
+		except:
+			self.console.print("Error Starting Shell")
+
+
+	## Show Logs 
+	def logs(self, type=False):
+		if type:
+			os.system("docker exec -it " + self.name + " tail -f /var/log/2nform/" + type + ".log") 
+		else:	
+			os.system("docker logs " + self.name)
+
+
+	## Run the Container
+	def run(self):
+		## Set cc to container config
+		cc = self.config.get("container")
+		## Show current Config
+		self.config.view()
+
+		## Prompt user to continue
+		if yesno("Does this look correct?"):
+			## Pull the Image
+			self.pull(cc["image"])
+			## Run Container 
+			self.console.print("Running Container...", style="blue")
+			self.container = self.client.containers.run(
+				image = cc["image"],
+				detach = cc["detach"],
+				restart_policy = cc["restart_policy"],
+				name = cc["name"],
+				hostname = cc["hostname"],
+				ports = cc["ports"],
+				volumes = cc["volumes"],
+				environment = cc["environment"]
+				)
+
+			self.console.print("Container Running", style="green")
+		else:
+			self.setup()
+
+
+
+	## Pull Image
+	def pull(self, image):
+		tasks = {}
+		ids = []
+		## Start a progress bar
+		with Progress() as progress:
+			## Use low level api to get download status.
+			for line in self.api.pull(image, stream=True, decode=True):
+				try:
+					id = line["id"]
+					if not line["id"] in ids:
+						try:
+							tasks[id] = progress.add_task(line["status"], total=line["progressDetail"]["total"])
+						except:
+							tasks[id] = progress.add_task(line["status"])
+
+						ids.append(id)
+					else:
+						try:
+							progress.update(tasks[id], description=line["status"], completed=line["progressDetail"]["current"], total=line['progressDetail']['total'])
+						except:
+							print()
+				except:
+					## TODO Figure out a better way to do the above.  Error catch all.
+					self.console.print("Possible Error")
+
+	## Init run / setup
+	def init(self):
+		if self.config.get("manager", "setup"):
+			self.run()
+		else:
+			self.setup()
+
+
+	## Setup Process
+	def setup(self):
+		setup = Setup(self.config)
+		setup.start()
+
+
+
+##### Setup Class
+
+class Setup:
+	def __init__(self, config):
+		self.console = Console()
+		self.config = config
+
+	## Start Setup
+	def start(self):
+		## Clear Shell and Print Welcome
+		clear()
+		self.console.print("Welcome to Docker Setup!\n", style="bold blue")
+
+
+		## Setup Ports
+		self.ports = self.ports()
+
+		## Setup Volumes
+		self.volumes = self.volumes()
+
+		## Setup Envs
+		self.envs = self.envs()
+
+		clear()
+
+		self.config.viewConfig(self.ports, self.volumes, self.envs)
+
+		if yesno("Does this look correct?"):
+			clear()
+			self.console.print("[blue]Updating Config...")
+			self.config.update("container", "ports", self.ports)
+			self.config.update("container", "volumes", self.volumes)
+			self.config.update("container", "environment", self.envs)
+			self.config.update("manager", "setup", True)
+			
+			time.sleep(1.4)
+			self.console.print("[Writing Config...]")
+			self.config.write()
+			time.sleep(1)
+
+			clear()
+			self.console.print("[green]Setup Complete!")
+			self.config.viewConfig()
+			self.console.print("[yellow] Re-run [blue]n [yellow]command to start the container!")
+			input("Press any Key to Quit.")
+
+
+		else:
+			self.console.print("[blue]Changes [red]not Saved")
+			time.sleep(1.5)
+			sys.exit()		
+
+
+	## Ports section: Returns dict of ports.
+	def ports(self, ports=False, desc=False, invalid=False, first=True):
+		## Clear Console
+		clear()
+		
+		## Display Invalid Input
+		if invalid:
+			self.console.print("[red]Invalid Input: {}\n".format(invalid))
+
+		## Create Table
+		table = Table(
+				show_header=True, 
+				header_style="bold blue", 
+				title="Ports", 
+				title_style="bold red"
+			)
+
+		## Add id and data Column to Table
+		table.add_column("ID")
+		table.add_column("Container:Host")
+		table.add_column("Description")
+
+		## Add Some Default Ports if none passed.
+		if not ports:
+			ports = {
+				80 : 80,
+				5432 : 15432,
+				9003 : 9003,
+				3000 : 3000,
+				5000 : 5000,
+				35729 : 35729	
+			}
+
+		if not desc:
+			desc = [
+				"Main Http Port",
+				"Postgres for Dbeaver Connection",
+				"PHP XDebug",
+				"Node Api",
+				"Python Flask",
+				"Chrome Live Reload"
+			]
+
+
+		for i, port in enumerate(ports, start=1):
+			table.add_row(str(i), str(port) + " : " + str(ports[port]), desc[i-1])
+
+		## Show Table
+		self.console.print(table)
+		
+		## Prompt User
+		if first:
+			self.console.print("[blue]Here are the default port mappings.")
+		self.console.print("[blue]To [red]remove [blue]a port mapping, [yellow]submit [blue]it's [yellow]id")
+		self.console.print("[blue]To [grean]add [blue]a custom port, [yellow]submit [blue]it like [green]8080:8080  [yellow](Container[blue]:[yellow]Host)")
+		self.console.print("[blue]If you are [magenta]modifying an existing, [red]remove [blue]it and [green]add [blue]a new mapping.")
+		self.console.print("[blue]To quit setup, submit [bold cyan]q")
+		self.console.print("[blue]To [green]accept [blue]your settings, [blue] press [bold green]enter")
+		userInput = input()
+
+		## Parse Input
+		try:
+			userInput = int(userInput)
+			for i, port in enumerate(ports, start=1):
+				if i == userInput:
+					del ports[port]
+					desc.pop(i-1)
+					break
+		except:
+			try:
+				array = userInput.split(":")
+				ports[int(array[0])] = int(array[1])
+				desc.append("Custom")
+			except:
+				if userInput == '':
+					return ports
+				elif userInput.lower() == 'q':
+					self.quit()
+				else:
+					return self.ports(ports, desc, invalid=userInput, first=False)
+
+		return self.ports(ports, desc, first=False)
+
+
+
+	## Volumes: Returns Dict
+	def volumes(self, volumes=False, desc=False, invalid=False, type="initial"):
+		## Clear Console
+		clear()
+		
+		## Display Invalid Input
+		if invalid:
+			self.console.print("[red]Invalid Input: {}\n".format(invalid))
+
+		## Create Table
+		table = Table(
+				show_header=True, 
+				header_style="bold blue", 
+				title="Volumes", 
+				title_style="bold red"
+			)
+
+		## Add id and data Column to Table
+		table.add_column("ID")
+		table.add_column("Host:Container")
+		table.add_column("Description")
+
+		## Add Some Default Ports if none passed.
+		if not volumes:
+			volumes = [
+				'2nform:/var/www',
+				'dump:/dump',
+				'postgres-data:/var/lib/postgresql',
+				'user-data:/root'	
+			]
+
+		if not desc:
+			desc = [
+				"Main Project Storage",
+				"Large File Storage",
+				"Postgres Data",
+				"User Data"
+			]
+
+
+		for i, volume in enumerate(volumes, start=1):
+			table.add_row(str(i), str(volume), desc[i-1])
+
+		## Show Table
+		self.console.print(table)
+		
+		## Prompt User
+		if type == "initial":
+			self.console.print("[blue]Here are the default volume mappings")
+			self.console.print("[cyan]These allow data to be persisted between updates")
+			self.console.print("[blue]The most [bold blue]important [blue]choice here is the mount for [green]/var/www")
+			if yesno("Will you be using VSCode Remote Tools?"):
+				return self.volumes(type="second")
+			else:
+				if yesno("Do you want to mount the [blue]2nform [yellow]folder in your home dir as the porject folder?"):
+					volumes.pop(0)
+					volumes.insert(0, homeDir+"/2nform:/var/www")
+					return self.volumes(volumes, type="second")
+				else:
+					self.console.print("[yellow]What folder would you like to use?  [blue](Absolute Path)")
+					userInput = input(">")
+					volumes.pop(0)
+					volumes.insert(0, str(userInput)+ ":/var/www")
+					return self.volumes(volumes, type="second")
+
+		elif type == "second":
+			self.console.print("[cyan]You can now make custom changes to mounts")
+		
+		self.console.print("[blue]To [red]remove [blue]a mount, [yellow]submit [blue]it's [yellow]id")
+		self.console.print("[blue]To [grean]add [blue]a custom mount, [yellow]submit [blue]it like [green]/path:/path [yellow](Host[blue]:[yellow]Container)")
+		self.console.print("[blue]If you are [magenta]modifying an existing, [red]remove [blue]it and [green]add [blue]a new mount.")
+		self.console.print("[blue]To quit setup, submit [bold cyan]q")
+		self.console.print("[blue]To [green]accept [blue]your settings, [blue] press [bold green]enter")
+		userInput = input()
+
+		## Parse Input
+		try:
+			userInput = int(userInput)
+			for i, volume in enumerate(volumes, start=1):
+				if i == userInput:
+					volumes.pop(i-1)
+					desc.pop(i-1)
+					break
+		except:
+			if userInput == '':
+				return volumes
+			elif userInput.lower() == 'q':
+				self.quit()
+			else:
+				volumes.append(str(userInput))
+				desc.append("Custom")
+				return self.volumes(volumes, desc, type="final")
+
+		return self.volumes(volumes, desc, type="final")
+
+
+	## Envs: Returns Dict
+	def envs(self, envs=False, invalid=False, type="initial"):
+		## Clear Console
+		clear()
+		
+		## Display Invalid Input
+		if invalid:
+			self.console.print("[red]Invalid Input: {}\n".format(invalid))
+
+		## Create Table
+		table = Table(
+				show_header=True, 
+				header_style="bold blue", 
+				title="Envs", 
+				title_style="bold red"
+			)
+
+		## Add id and data Column to Table
+		table.add_column("ID")
+		table.add_column("Env")
+
+		if envs:
+			for i, env in enumerate(envs, start=1):
+				table.add_row(str(i), str(env))
+
+
+		if type == "initial":
+			self.console.print("[blue]Finally, we need to set a few vars for the container.")
+			self.console.print("[yellow]Enter your [blue]git username?")
+			gitUsername = input(">")
+			self.console.print("[yellow]Enter your [blue]git email?")
+			gitEmail = input(">")
+			envs = []
+			envs.append("GIT_USERNAME="+str(gitUsername))
+			envs.append("GIT_EMAIL="+str(gitEmail))
+			
+			return self.envs(envs, type="second")
+
+		## Show Table
+		self.console.print(table)
+
+		if type == "second":
+			self.console.print("[cyan]You can now make custom changes to envs")
+		
+		self.console.print("[blue]To [red]remove [blue]an env, [yellow]submit [blue]it's [yellow]id")
+		self.console.print("[blue]To [grean]add [blue]a custom env, [yellow]submit [blue]it like [green]ENV=value [yellow]")
+		self.console.print("[blue]If you are [magenta]modifying an existing, [red]remove [blue]it and [green]add [blue]a new env.")
+		self.console.print("[blue]To quit setup, submit [bold cyan]q")
+		self.console.print("[blue]To [green]accept [blue]your settings, [blue] press [bold green]enter")
+		userInput = input()
+
+		## Parse Input
+		try:
+			userInput = int(userInput)
+			for i, env in enumerate(envs, start=1):
+				if i == userInput:
+					envs.pop(i-1)
+					break
+		except:
+			if userInput == '':
+				return envs
+			elif userInput.lower() == 'q':
+				self.quit()
+			else:
+				envs.append(str(userInput))
+				return self.envs(envs, type="final")
+
+		return self.envs(envs, type="final")
+
+
+
+
+
+	## Quit Setup
+	def quit(self):
+		clear()
+		self.console.print("[bold blue] Setup has been quit.")
+		self.console.print("[red] No [blue]changes have been made.")
+		time.sleep(2)
+		clear()
+		sys.exit()
+
+
+
+########  Misc Functions  #####################
+
+
+### Yes / No ##
+## Pass question and the default answer
+def yesno(label, default="yes"):
+	
+	console = Console()
+
+	valid = {"yes": True, "y": True, "Y": True,
+			"no": False, "n": False, "N": False}
+	if default is None:
+		prompt = " [green](y[yellow]/[red]n) "
+	elif default == "yes":
+		prompt = " [yellow]([bold green]Y[yellow]/[red]n[yellow]) "
+	elif default == "no":
+		prompt = " [yellow]([green]y[yellow]/[bold red]N[yellow]) "
+	else:
+		raise ValueError("invalid default answer: '%s'" % default)
+
+	while True:
+		console.print("[yellow]" + label + prompt)
+		choice = input().lower()
+		if default is not None and choice == '':
+			return valid[default]
+		elif choice in valid:
+			return valid[choice]
+		else:
+			console.print("[bold red]Invalid input\n") 
+
+
+def updateManager(config, force=False):
+	console = Console()
+	url = "https://raw.githubusercontent.com/oldmanz/docker-manager/main/n"
+	today = str(date.today())
+
+	try:
+		r = requests.get(url, allow_redirects=True)
+	except:
+		console.print("[red]Remote Not Available")
+		config.update("manager", "lastChecked", today)
+		return False
+
+	for line in r.iter_lines():
+		if re.match('current_version.+', str(line)):
+			print(line)
+		
+
+	if getOS() == "windows":
+		filePath = r'C:\\Windows\System32\n.py'
+	else:
+		filePath = "/usr/local/bin/n"
+	
+	try:
+		open(filePath, 'wb').write(r.content)
+		config.update("manager", "lastChecked", today)
+		config.write()
+		console.print("[green]Updated!")
+	except Exception as e:
+		try:
+			downFile = homeDir+"/n-2nform-download"
+			open(downFile, 'wb').write(r.content)
+
+			if getOS() == "windows":
+				subprocess.call(['copy', downFile, filePath])
+			else:
+				subprocess.call(['sudo', 'cp', downFile, filePath])
+			os.remove(downFile)
+			config.update("manager", "lastChecked", today)
+			config.write()
+			console.print("[green]Updated!")
+		except Exception as e:
+			console.print("Error")
+			console.print("Can't Update")
+
+
+def getOS():
+	if os.name == 'nt':
+		return "windows"
+	else:
+		return "other"
+
+
+
+## Clear screen
+def clear():
+
+	## If windows
+	if os.name == 'nt':   
+		_ = os.system('cls')   
+  
+	## Mac and Linux 
+	else:   
+		_ = os.system('clear')   
+
+
+
+
+
+############ Start Main Process ###########
+if __name__=="__main__":
+   main()
+
+
+# n
+#    echo "gui|menu|g                         Open Main Menu"
+
+#    echo "  -  manager                       Open Container Manager"
+#    echo "  -  software                      Open Software Gui"
+#    echo "  -  logs                          Open Logs Gui"
+#    echo "  -  setup                         Start Run Command Setup"
+#    echo
+#    echo "status                             Print Container Info"
+#    echo
+#    echo "start                              Start 2nform Container"
+#    echo "restart                            Restart 2nform Container"
+#    echo "stop                               Stop 2nform Container"
+#    echo "remove                             Remove 2nform Container (Data Persists)"
+#    echo
+#    echo "restore                            Start Database Restore"
+#    echo
+#    echo "upgrade                            Drop and re-run Contaier."
+#    echo "reset                              Reset Container  (Prompts for type)"
+#    echo
+#    echo "ssh                                Print your ssh key"
+#    echo
+#    echo "update                             Starts update check (Container and Script)"
+#    echo "  -  m                             Force Manager Update"
+#    echo "  -  v                             Force Container Update"
+#    echo
+#    echo "text|subl|sublime                  Start Sublime Text"
+#    echo "merge                              Start Sublime Merge"
+#    echo "gitkraken                          Start Git Kraken"
+#    echo "pycharm                            Start Pycharm"
+#    echo  
+#    echo "logs|log|l                         Open Container Logs"
+#    echo "  -  git                           Open Git Cloner Logs"
+#    echo "  -  restore                       Open DB Restore Logs"
+#    echo "  -  REPO (api|ram|...)            Open Project Setup Logs"
+#    echo
+#    echo "REPO (api|ram|...)                 Open Project Folder in Shell"
+#    echo "  -  t|test                        Test Repo"
+#    echo "  -  r|run                         Run Repo"
+#    echo "  -  i|install                     Install Repo"
