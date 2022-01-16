@@ -234,7 +234,6 @@ class Config:
 		## Define some defaults
 		self.config = {
 			'manager' : {
-				'version': self.version,
 				'setup': False,
 				'lastChecked': '2022-01-14'
 			},
@@ -303,12 +302,11 @@ class Config:
 		tableVersions.add_column("Manager")
 		tableVersions.add_column("Image")
 
-		## Setup Vars
-		cm = self.config.get("manager")
+		## Setup Var
 		cc = self.config.get("container")
 
 		## Add versions to version table		
-		tableVersions.add_row("[red]"+str(cm["version"]), "[red]"+cc["image"])
+		tableVersions.add_row("[red]"+str(current_version), "[red]"+cc["image"])
 
 		## Show tables
 		self.console.print(tableVersions)
@@ -949,11 +947,12 @@ class Updater():
 					splitLines = decoded.split("=")
 					if splitLines[0] in ["current_version ", "current_version"]:
 						latest_version = splitLines[1]
-						return latest_version
-					else:
-						self.console.print("No Manager Updates")
-						self.updateConfig()
-						return False
+						if latest_version != current_version:
+							return True
+						else:
+							self.console.print("No Manager Updates")
+							self.updateConfig()
+							return False
 				except:
 					console.print("[red]Remote Error")
 					self.updateConfig()
