@@ -58,7 +58,6 @@ def main():
 	updater = Updater(config)
 
 	if args.get(1) == "update":
-		console.print ("Starting Update...")
 		updater.startUpdate()
 
 	## Check if update needed. 
@@ -947,7 +946,7 @@ class Updater():
 					splitLines = decoded.split("=")
 					if splitLines[0] in ["current_version ", "current_version"]:
 						latest_version = splitLines[1]
-						if latest_version != current_version:
+						if float(latest_version) != float(current_version):
 							return True
 						else:
 							self.console.print("No Manager Updates")
@@ -984,7 +983,7 @@ class Updater():
 
 
 	def startUpdate(self, force=False):
-		if force or self.checkManager():
+		if self.checkManager():
 			if self.updateManager():
 				sys.exit()
 		elif self.checkContainer():
@@ -1149,45 +1148,3 @@ def showHelp():
 ############ Start Main Process ###########
 if __name__=="__main__":
    main()
-
-
-# n
-#    echo "gui|menu|g                         Open Main Menu"
-
-#    echo "  -  manager                       Open Container Manager"
-#    echo "  -  software                      Open Software Gui"
-#    echo "  -  logs                          Open Logs Gui"
-#    echo "  -  setup                         Start Run Command Setup"
-#    echo
-#    echo "status                             Print Container Info"
-#    echo
-#    echo "start                              Start 2nform Container"
-#    echo "restart                            Restart 2nform Container"
-#    echo "stop                               Stop 2nform Container"
-#    echo "remove                             Remove 2nform Container (Data Persists)"
-#    echo
-#    echo "restore                            Start Database Restore"
-#    echo
-#    echo "upgrade                            Drop and re-run Contaier."
-#    echo "reset                              Reset Container  (Prompts for type)"
-#    echo
-#    echo "ssh                                Print your ssh key"
-#    echo
-#    echo "update                             Starts update check (Container and Script)"
-#    echo "  -  m                             Force Manager Update"
-#    echo "  -  v                             Force Container Update"
-#    echo
-#    echo "text|subl|sublime                  Start Sublime Text"
-#    echo "merge                              Start Sublime Merge"
-#    echo "gitkraken                          Start Git Kraken"
-#    echo "pycharm                            Start Pycharm"
-#    echo  
-#    echo "logs|log|l                         Open Container Logs"
-#    echo "  -  git                           Open Git Cloner Logs"
-#    echo "  -  restore                       Open DB Restore Logs"
-#    echo "  -  REPO (api|ram|...)            Open Project Setup Logs"
-#    echo
-#    echo "REPO (api|ram|...)                 Open Project Folder in Shell"
-#    echo "  -  t|test                        Test Repo"
-#    echo "  -  r|run                         Run Repo"
-#    echo "  -  i|install                     Install Repo"
