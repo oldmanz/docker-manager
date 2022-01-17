@@ -1,6 +1,6 @@
 #!/usr/bin/python
 current_version = 1.0
-current_image = "2nform/docker-local-dev:1.1"
+current_image = "2nform/docker-local-dev:1.2"
 container_name = "2nform"
 
 
@@ -131,6 +131,12 @@ def dispatcher(args, docker, config):
 		if yesno("This will remove all data. Are you sure?", "no"):
 			docker.reset()
 
+	elif arg1 in ["restore"]:
+		if arg2 in ["latest", "l"]:
+			docker.restore(latest=True)
+		else:
+			docker.restore()
+
 	elif arg1 in ["logs", "log", "l"]:
 		if arg2:
 			docker.logs(arg2)
@@ -253,13 +259,14 @@ class Config:
 				},
 				'volumes': [
 					'2nform:/var/www',
-					'dump:/dump',
 					'postgres-data:/var/lib/postgresql',
 					'user-data:/root'
 				],
 				'environment': [
 					'GIT_USERNAME=',
-					'GIT_EMAIL='
+					'GIT_EMAIL=',
+					'AWS_ACCESS_KEY_ID=',
+					'AWS_SECRET_ACCESS_KEY='
 				]
 			}
 		}
@@ -495,6 +502,17 @@ class Docker:
 			self.run()
 		except:
 			self.console.print("Reset Failed")
+
+	def restore(self, file=False):
+		try:
+			if file:
+				## Run restore bin
+				os.system("docker exec -it " + self.name + "restore")
+			else:
+				## Run Script restore
+				os.system("docker exec -it " + self.name + "/opt/scripts/restore force")
+		except:
+			self.console.print("Error Starting Restore.")
 
 
 	## Start Shell
@@ -756,7 +774,6 @@ class Setup:
 		if not volumes:
 			volumes = [
 				'2nform:/var/www',
-				'dump:/dump',
 				'postgres-data:/var/lib/postgresql',
 				'user-data:/root'	
 			]
@@ -764,7 +781,6 @@ class Setup:
 		if not desc:
 			desc = [
 				"Main Project Storage",
-				"Large File Storage",
 				"Postgres Data",
 				"User Data"
 			]
@@ -854,14 +870,20 @@ class Setup:
 
 		if type == "initial":
 			self.console.print("[blue]Finally, we need to set a few vars for the container.")
-			self.console.print("[yellow]Enter your [blue]git username?")
+			self.console.print("[yellow]Enter your [blue]git username:")
 			gitUsername = input(">")
-			self.console.print("[yellow]Enter your [blue]git email?")
+			self.console.print("[yellow]Enter your [blue]git email:")
 			gitEmail = input(">")
+			self.console.print("[yellow]Enter Your [blue]AWS Access Key:")
+			gitAccess = input(">")
+			self.console.print("[yellow]Enter your [blue]AWS Secret Key:")
+			gitSecret = input(">")
 			envs = []
 			envs.append("GIT_USERNAME="+str(gitUsername))
 			envs.append("GIT_EMAIL="+str(gitEmail))
-			
+			envs.append("AWS_ACCESS_KEY_ID="+str(gitAccess))
+			envs.append("AWS_SECRET_ACCESS_KEY="+str(gitSecret))
+
 			return self.envs(envs, type="second")
 
 		## Show Table
@@ -1056,6 +1078,8 @@ class Updater():
 ########  Misc Functions  #####################
 
 
+
+
 ### Yes / No ##
 ## Pass question and the default answer
 def yesno(label, default="yes"):
@@ -1129,6 +1153,9 @@ def showHelp():
 		["[blue]update", "[yellow]Force System Update.  [magenta](Same as Daily Check)"],
 		["[blue]remove[yellow]|[blue]drop[yellow]|[blue]x", "[yellow]Remove Container [green](Data Persists)"],
 		["[blue]reset[yellow]|[blue]xx", "[yellow]Reset Container [red](Data Lost)"],
+		["",""],
+		["[blue]restore", "[yellow]Start a Database Restore [blue](Pulls latest backup)"],
+		["[blue]restore f", "[yellow]Restore from a Backup File. [blue](Placed in /dump)"],
 		["",""],
 		["[blue]logs[yellow]|[blue]l", "[yellow]Show Container Logs"],
 		["[blue]logs [yellow][[blue]api[yellow]|[blue]ram[yellow]|[blue]...[yellow]]", "[yellow]Display Custom Logs"],
