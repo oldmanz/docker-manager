@@ -152,6 +152,9 @@ def dispatcher(args, docker, config):
 	elif arg1 in ["help", "h"]:
 		showHelp()
 
+	elif arg1 in ["setup"]:
+		docker.setup()
+
 	## Handled before dispatcher  Just Exit here
 	elif arg1 in ["update"]:
 		sys.exit()
@@ -794,22 +797,36 @@ class Setup:
 		
 		## Prompt User
 		if type == "initial":
-			self.console.print("[blue]Here are the default volume mappings")
+			self.console.print("[blue]Here are the default volume mappings for [yellow]" + getOS())
 			self.console.print("[cyan]These allow data to be persisted between updates")
 			self.console.print("[blue]The most [bold blue]important [blue]choice here is the mount for [green]/var/www")
-			if yesno("Will you be using VSCode Remote Tools?"):
-				return self.volumes(type="second")
-			else:
-				if yesno("Do you want to mount the [blue]2nform [yellow]folder in your home dir as the porject folder?"):
-					volumes.pop(0)
-					volumes.insert(0, homeDir+"/2nform:/var/www")
-					return self.volumes(volumes, type="second")
+			if getOS() != "windows":
+				if yesno("Will you be using VSCode Remote Tools?"):
+					return self.volumes(type="second")
 				else:
-					self.console.print("[yellow]What folder would you like to use?  [blue](Absolute Path)")
-					userInput = input(">")
-					volumes.pop(0)
-					volumes.insert(0, str(userInput)+ ":/var/www")
-					return self.volumes(volumes, type="second")
+					if getOS() == "mac":
+						self.console.print("[blue]On Mac, we will need to setup an NFS Mount [yellow]This will happen automatically")
+
+					if yesno("Do you want to use the [blue]2nform [yellow]folder in your home dir as the project folder?  [green]It Will Be Created"):
+						folderDir = homeDir+"/2nform"
+						if getOS() == "mac":
+							createNFSMount(folderDir)
+						volumes.pop(0)
+						volumes.insert(0, folderDir+":/var/www")
+						return self.volumes(volumes, type="second")
+					else:
+						self.console.print("[yellow]What folder would you like to use?  [blue](Absolute Path)")
+						folderDir = input(">")
+						if getOS() == "mac":
+							createNFSMount(folderDir)
+						volumes.pop(0)
+						volumes.insert(0, str(userInput)+ ":/var/www")
+						return self.volumes(volumes, type="second")
+			else:
+				self.console.print("[yellow]On [blue]Windows[yellow], you must use [magenta]VSCode [yellow]Remote to develop.")
+				self.console.print("[yellow]You should leave [blue]2mform:/var/www [yellow]as default")
+				input("Press any key to continue..")
+				return self.volumes(volumes, type="second")
 
 		elif type == "second":
 			self.console.print("[cyan]You can now make custom changes to mounts")
@@ -1110,10 +1127,60 @@ def yesno(label, default="yes"):
 
 
 def getOS():
-	if os.name == 'nt':
+	if sys.platform.startswith('linux'):
+		return "linux"
+	elif sys.platform == 'darwin':
+		return "mac"
+	elif sys.platform == "win32":
 		return "windows"
 	else:
-		return "other"
+		return "unknown"
+
+
+
+def createNFSMount(folderDir):
+	console = Console()
+	if getOS() != "mac":
+		console.print("[red] Can't Create an NFS Mount on this OS!")
+		sys.exit()
+
+	console.print("[blue] NFS Mount Creation")
+	
+
+	if not yesno("[yellow]This will stop any running containers. Would you like to continue?"):
+		sys.exit()
+
+	try:
+		subprocess.run([
+			'echo "== Stopping running docker containers..."',
+			'docker-compose down > /dev/null 2>&1',
+			'docker volume prune -f > /dev/null',
+			"""osascript -e 'quit app "Docker"'""",
+			"mkdir {}".format(folderDir),
+			'echo "== Resetting folder permissions..."',
+			'U=`id -u`',
+			'G=`id -g`',
+			'sudo chown -R "$U":"$G" .',
+			'echo "== Setting up nfs..."',
+			'LINE="/System/Volumes/Data -alldirs -mapall=$U:$G localhost"',
+			'FILE=/etc/exports',
+			'sudo cp /dev/null $FILE',
+			'grep -qF -- "$LINE" "$FILE" || sudo echo "$LINE" | sudo tee -a $FILE > /dev/null',
+			'LINE="nfs.server.mount.require_resv_port = 0"',
+			'FILE=/etc/nfs.conf',
+			'grep -qF -- "$LINE" "$FILE" || sudo echo "$LINE" | sudo tee -a $FILE > /dev/null',
+			'echo "== Restarting nfsd..."',
+			'sudo nfsd restart',
+			'echo "== Restarting docker..."',
+			'open -a Docker',
+			'while ! docker ps > /dev/null 2>&1 ; do sleep 2; done',
+			'echo ""',
+			'echo "SUCCESS!"'
+			])
+		return True
+	except:
+		console.print("[red]Error Creating NFS Mount")
+		sys.exit()
 
 
 
