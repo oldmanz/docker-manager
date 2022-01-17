@@ -530,7 +530,7 @@ class Docker:
 
 	## Show SSH Key
 	def ssh(self):
-		os.system("docker exec -it " + self.name + " cat /dump/ssh.txt") 
+		os.system("docker exec -it " + self.name + " cat /root/.ssh/id_ed25519.pub") 
 
 
 
@@ -809,16 +809,16 @@ class Setup:
 
 					if yesno("Do you want to use the [blue]2nform [yellow]folder in your home dir as the project folder?  [green]It Will Be Created"):
 						folderDir = homeDir+"/2nform"
-						if getOS() == "mac":
-							createNFSMount(folderDir)
+						#if getOS() == "mac":
+							#createNFSMount(folderDir)
 						volumes.pop(0)
 						volumes.insert(0, folderDir+":/var/www")
 						return self.volumes(volumes, type="second")
 					else:
 						self.console.print("[yellow]What folder would you like to use?  [blue](Absolute Path)")
 						folderDir = input(">")
-						if getOS() == "mac":
-							createNFSMount(folderDir)
+						#if getOS() == "mac":
+							#createNFSMount(folderDir)
 						volumes.pop(0)
 						volumes.insert(0, str(userInput)+ ":/var/www")
 						return self.volumes(volumes, type="second")
