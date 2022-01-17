@@ -1,5 +1,5 @@
 #!/usr/bin/python
-current_version = 1.0
+current_version = 1.1
 current_image = "2nform/docker-local-dev:1.2"
 container_name = "2nform"
 
