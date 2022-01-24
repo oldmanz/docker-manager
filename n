@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-current_version = 1.1
-current_image = "2nform/docker-local-dev:1.2"
+current_version = 1.2
+current_image = "2nform/docker-local-dev:1.4"
 container_name = "2nform"
 
 
@@ -213,6 +213,20 @@ class Config:
 	## Check Config for Errors
 	def check(self):
 		try:
+			## Update vol list to vol dict
+			if type(self.get("container", "volumes")) != dict:
+				self.update("container", "volumes", {
+						"2nform": {
+			                "bind": "/var/www",
+			                "mode": "rw"
+			            },
+			            "postgres-data": {
+			                "bind": "/var/lib/postgresql",
+			                "mode": "rw"
+			            },
+					})
+				self.write()
+
 			assert type(self.get("manager", "setup")) == bool
 			assert type(self.get("manager", "lastChecked")) == str
 			assert type(self.get("container", "lastChecked")) == str
@@ -222,7 +236,7 @@ class Config:
 			assert type(self.get("container", "name")) == str
 			assert type(self.get("container", "hostname")) == str
 			assert type(self.get("container", "ports")) == dict
-			assert type(self.get("container", "volumes")) == list
+			assert type(self.get("container", "volumes")) == dict
 			assert type(self.get("container", "environment")) == list
 		except Exception as e:
 			self.error()
@@ -260,11 +274,16 @@ class Config:
 					5000 : 5000,
 					35729 : 35729
 				},
-				'volumes': [
-					'2nform:/var/www',
-					'postgres-data:/var/lib/postgresql',
-					'user-data:/root'
-				],
+				'volumes': {
+					"2nform": {
+		                "bind": "/var/www",
+		                "mode": "rw"
+		            },
+		            "postgres-data": {
+		                "bind": "/var/lib/postgresql",
+		                "mode": "rw"
+            		}
+            	},
 				'environment': [
 					'GIT_USERNAME=',
 					'GIT_EMAIL=',
@@ -347,7 +366,7 @@ class Config:
 
 		vTable = Table(show_header=False, box=None)
 		for volume in volumes:
-			vTable.add_row("[magenta]"+volume)
+			vTable.add_row("[magenta]"+volume + " : " + volumes[volume]["bind"])
 
 		eTable = Table(show_header=False, box=None)
 		for env in envs:
@@ -513,7 +532,7 @@ class Docker:
 				os.system("docker exec -it " + self.name + "restore")
 			else:
 				## Run Script restore
-				os.system("docker exec -it " + self.name + "/opt/scripts/restore force")
+				os.system("docker exec -it " + self.name + " /opt/scripts/restore force")
 		except:
 			self.console.print("Error Starting Restore.")
 
@@ -555,6 +574,7 @@ class Docker:
 			self.pull(cc["image"])
 			## Run Container 
 			self.console.print("Running Container...", style="blue")
+			print(cc["volumes"])
 			self.container = self.client.containers.run(
 				image = cc["image"],
 				detach = cc["detach"],
@@ -577,26 +597,30 @@ class Docker:
 		tasks = {}
 		ids = []
 		## Start a progress bar
-		with Progress() as progress:
-			## Use low level api to get download status.
-			for line in self.api.pull(image, stream=True, decode=True):
-				try:
-					id = line["id"]
-					if not line["id"] in ids:
-						try:
-							tasks[id] = progress.add_task(line["status"], total=line["progressDetail"]["total"])
-						except:
-							tasks[id] = progress.add_task(line["status"])
+		try:
+			with Progress() as progress:
+				## Use low level api to get download status.
+				for line in self.api.pull(image, stream=True, decode=True):
+					try:
+						id = line["id"]
+						if not line["id"] in ids:
+							try:
+								tasks[id] = progress.add_task(line["status"], total=line["progressDetail"]["total"])
+							except:
+								tasks[id] = progress.add_task(line["status"])
 
-						ids.append(id)
-					else:
-						try:
-							progress.update(tasks[id], description=line["status"], completed=line["progressDetail"]["current"], total=line['progressDetail']['total'])
-						except:
-							print()
-				except:
-					## TODO Figure out a better way to do the above.  Error catch all.
-					self.console.print("Possible Error")
+							ids.append(id)
+						else:
+							try:
+								progress.update(tasks[id], description=line["status"], completed=line["progressDetail"]["current"], total=line['progressDetail']['total'])
+							except:
+								print()
+					except:
+						## TODO Figure out a better way to do the above.  Error catch all.
+						self.console.print("Possible Error")
+		except:
+			self.console.print("Image Not Found on Remote")
+
 
 	## Init run / setup
 	def init(self):
@@ -631,7 +655,8 @@ class Setup:
 		self.ports = self.ports()
 
 		## Setup Volumes
-		self.volumes = self.volumes()
+		#self.volumes = self.volumes()
+		self.volumes = self.config.get("container", "volumes")
 
 		## Setup Envs
 		self.envs = self.envs()
@@ -992,7 +1017,7 @@ class Updater():
 							self.updateConfig()
 							return False
 				except:
-					console.print("[red]Remote Error")
+					self.console.print("[red]Remote Error")
 					self.updateConfig()
 					return False
 		else:
